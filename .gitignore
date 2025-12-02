@@ -1,0 +1,139 @@
+########################
+# GENERAL
+########################
+# OS / editor junk
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE / editor
+.vscode/
+.idea/
+*.code-workspace
+*.swp
+*.swo
+
+# Build artifacts
+*.log
+*.tmp
+
+########################
+# PYTHON / DJANGO
+########################
+# Virtual environments
+venv/
+.venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# Byte-compiled / cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Django-specific
+db.sqlite3
+*.sqlite3
+*.db
+
+# Static/media (generated)
+staticfiles/
+static_root/
+static/
+media/
+media_root/
+
+# Migrations – usually KEEP these in git,
+# so these are commented-out. Uncomment only if you really know why.
+# ** DO NOT UNCOMMENT LIGHTLY **
+# */migrations/
+# */migrations/*.py
+# !*/migrations/__init__.py
+
+# Local settings & secrets
+local_settings.py
+settings_local.py
+.env
+*.env
+.env.*
+.envrc
+secrets.json
+
+# Testing / tooling
+.coverage
+.tox/
+.pytest_cache/
+.mypy_cache/
+.cache/
+htmlcov/
+
+########################
+# UNITY
+########################
+
+# Unity auto-generated folders
+[Ll]ibrary/
+[Tt]emp/
+[Oo]bj/
+[Bb]uild/
+[Bb]uilds/
+[Ll]ogs/
+[Mm]emoryCaptures/
+[Uu]serSettings/
+
+# The specific folder you mentioned
+Unity/Build/
+
+# Unity crash reports
+sysinfo.txt
+
+# Visual Studio / Rider / .NET
+.vs/
+*.csproj
+*.unityproj
+*.sln
+*.suo
+*.user
+*.userprefs
+*.pidb
+*.booproj
+*.svd
+*.pdb
+*.mdb
+*.opendb
+*.VC.db
+*.sln.DotSettings
+
+# Rider / JetBrains
+.idea/
+*.DotSettings.user
+
+# Unity cache / build outputs
+*.apk
+*.aab
+*.unitypackage
+*.dll.mdb
+*.exe
+*.app
+
+# Gradle / Android
+.gradle/
+**/build/
+
+########################
+# OTHER COMMON STUFF
+########################
+# Node / frontend
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-store/
+
+# Jupyter / IPython
+.ipynb_checkpoints/

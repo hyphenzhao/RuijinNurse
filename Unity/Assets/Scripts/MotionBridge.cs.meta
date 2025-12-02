@@ -1,0 +1,18 @@
+fileFormatVersion: 2
+guid: d1a9901c517d1b5419fb9a83197e6d8a
+MonoImporter:
+  externalObjects: {}
+  serializedVersion: 2
+  defaultReferences:
+  - animator: {instanceID: 0}
+  - listenClip: {fileID: -7055555701317352551, guid: 3d6d19a8a5c37fb4194bc92a08659152,
+      type: 3}
+  - talkClip: {fileID: 1625777924872893708, guid: 3d6b2c75bfe789d4fa823ced6d670b00,
+      type: 3}
+  - greetClip: {fileID: -5912898869886578226, guid: 6838cc9f6978730488b0b885f7f84bf4,
+      type: 3}
+  executionOrder: 0
+  icon: {instanceID: 0}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
