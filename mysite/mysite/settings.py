@@ -48,7 +48,11 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'promotions.middleware.LoginRequiredMiddleware',
 ]
+
+LOGIN_URL = '/accounts/login/'      # or whatever your login URL is
+LOGIN_REDIRECT_URL = '/'            # where to go after login
 
 ROOT_URLCONF = 'mysite.urls'
 
@@ -122,3 +126,9 @@ STATIC_URL = '/static/'
 # https://docs.djangoproject.com/en/4.2/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+LOGIN_EXEMPT_URLS = [
+    r'admin/login/?',       # allow admin login page
+    r'healthcheck/?',       # if you have a monitoring endpoint
+    # r'static/.*',         # only if you insist on public static files
+]
