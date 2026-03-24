@@ -59,7 +59,7 @@ ROOT_URLCONF = 'mysite.urls'
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [],
+        'DIRS': [BASE_DIR / 'templates'],
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [
@@ -130,5 +130,5 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 LOGIN_EXEMPT_URLS = [
     r'admin/login/?',       # allow admin login page
     r'healthcheck/?',       # if you have a monitoring endpoint
-    # r'static/.*',         # only if you insist on public static files
+    r'static/.*',         # only if you insist on public static files
 ]

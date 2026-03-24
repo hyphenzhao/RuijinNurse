@@ -13,6 +13,10 @@
     <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/common.min.js"></script>
 
     <style>
+        html, body {
+            height: 100%;
+        }
+
         .app-header{background:#0d6efd;color:#fff;padding:10px;border-radius:.5rem;}
         .app-layout{display:flex;gap:1rem;align-items:stretch;position:relative;}
         .panel-left,.panel-center,.panel-right{display:flex;flex-direction:column;min-width:0;}
@@ -60,6 +64,7 @@
         }
         .sidebar-toggle-tab .icon{font-size:1.25rem;line-height:1;}
         .sidebar-toggle-tab:hover{box-shadow:0 8px 20px rgba(0,0,0,.16);}
+
         /* Video bubble styles */
         .video-bubble .video-wrapper { position: relative; }
         .video-bubble video { width: 100%; height: auto; border-radius: .5rem; display: block; }
@@ -97,21 +102,177 @@
             .video-card{position:static;}
             .sidebar-toggle-tab{position:fixed;right:1rem;bottom:1rem;top:auto;transform:none;height:44px;width:44px;border-radius:50%;}
         }
+
+        /* MOBILE UNITY-BG START: phone-style layout */
+        @media (max-width: 767.98px){
+            html, body {
+                height: 100%;
+                overflow: hidden;
+            }
+
+            .root-container {
+                height: 100%;
+                max-width: 100%;
+                margin: 0;
+                padding: 0;
+            }
+            /* 让输入区在手机上变成上下布局，textarea 占大空间 */
+            .chat-input {
+                flex-direction: column;      /* 从横排改为竖排 */
+                align-items: stretch;        /* 宽度拉满 */
+                gap: .4rem;
+            }
+
+            .chat-input textarea {
+                min-height: 80px;           /* 明确给一个多行高度 */
+                max-height: 140px;          /* 防止太高挡住聊天记录 */
+            }
+
+            .chat-input button {
+                width: 100%;                /* 提交按钮占满一行，方便点 */
+            }
+            
+            /* Unity fills whole screen as background */
+            .panel-left {
+                position: fixed;
+                inset: 0;
+                z-index: 0;
+            }
+            .video-card {
+                height: 100%;
+                background: transparent;
+                border: none;
+                box-shadow: none;
+            }
+            .video-card .card-body {
+                height: 100%;
+                padding: 0;
+            }
+            .video-card .card-body > .mb-2,
+            .video-card .card-body > .mt-2 {
+                display: none; /* hide title & “新窗口打开” on mobile */
+            }
+            .unity-embed {
+                height: 100%;
+            }
+            .unity-iframe {
+                height: 100%;
+                border-radius: 0;
+            }
+
+            /* Overlay the rest at bottom with transparent panel */
+            .app-header {
+                position: fixed;
+                top: .75rem;
+                left: .75rem;
+                right: .75rem;
+                z-index: 3;
+                border-radius: .75rem;
+                background: rgba(13,110,253,0.05);
+            }
+
+            .app-layout {
+                position: fixed;
+                left: 0;
+                right: 0;
+                bottom: 0;
+                top: auto;
+                z-index: 2;
+                padding: 0 .75rem .75rem;
+                gap: .5rem;
+                flex-direction: column;
+                align-items: stretch;
+                pointer-events: none; /* only children receive clicks */
+            }
+
+            /* translucent bottom panel background */
+            .app-layout::before {
+                content: '';
+                position: absolute;
+                inset: 0;
+                background: rgba(255,255,255,0.05);
+                backdrop-filter: blur(10px);
+                border-radius: 1rem 1rem 0 0;
+                z-index: -1;
+            }
+
+            .panel-center,
+            .panel-right {
+                pointer-events: auto;
+            }
+
+            .panel-center {
+                max-height: 58vh;
+                overflow: hidden;
+            }
+
+            .chat-surface {
+                background: transparent;
+                box-shadow: none;
+                min-height: 0;
+                max-height: 58vh;
+                display: flex;
+                flex-direction: column;
+            }
+
+            .chat-messages {
+                max-height: 38vh;
+                border-radius: .75rem;
+                background: rgba(255,255,255,0.05);
+                border: none;
+            }
+
+            .chat-input {
+                padding: .5rem 0 0;
+            }
+
+            .sidebar {
+                background: rgba(255,255,255,0.05);
+                border-radius: .75rem;
+            }
+
+            .sidebar-toggle-tab {
+                bottom: 4.5rem;
+                right: .75rem;
+            }
+            .sidebar-collapse-toggle {
+                color: inherit;
+            }
+            .sidebar-collapse-toggle:hover {
+                text-decoration: none;
+            }
+        }
+        /* Intro welcome text (below the intro video) */
+        .video-bubble .intro-welcome {
+          margin-top: .5rem;
+          padding-top: .5rem;
+          border-top: 1px solid rgba(0,0,0,0.08);
+          font-size: .9rem;
+          line-height: 1.4;
+          color: #6c757d;
+        }
+
+        /* MOBILE UNITY-BG END */
     </style>
 </head>
 <body>
 
 <!-- One-tap gate required by browsers to allow fullscreen autoplay -->
-<div id="introGate" class="intro-gate" hidden>
+<!-- <div id="introGate" class="intro-gate" hidden>
   <div class="gate-card">
     <div class="gate-title">欢迎观看入院介绍视频</div>
     <button id="introStart" class="btn btn-primary btn-lg">开始播放</button>
   </div>
-</div>
+</div> -->
 
-<div class="container my-4">
+<div class="container my-4 root-container">
     <h1 class="text-center my-2 app-header">瑞金医院功能神外宣讲AI</h1>
-    <div id="appLayout" class="app-layout mt-3" data-show-intro="{{ show_intro|yesno:'1,0' }}" data-intro-src="{% static 'promotions/inpatient.mp4' %}">
+    <div id="appLayout"
+     class="app-layout mt-3"
+     data-show-intro="{{ show_intro|yesno:'1,0' }}"
+     data-intro-src="{% static 'promotions/inpatient.mp4' %}"
+     data-intro-welcome="欢迎来到瑞金医院功能神外智能宣讲。请先观看入院介绍视频，如有问题可在右侧输入提问。">
+
         <!-- Left: Unity WebGL (replaces the video) -->
         <div class="panel-left">
           <div class="video-card card">
@@ -120,10 +281,11 @@
 
               <!-- Responsive container (keeps aspect ratio if you prefer 16:9) -->
               <div class="unity-embed">
+                {% now "U" as ts %}
                 <iframe
                   id="unityFrame"
                   class="unity-iframe"
-                  src="{% static 'promotions/unity/Build/index.html' %}"
+                  src="{% static 'promotions/unity/Build/index.html' %}?v={{ ts }}"
                   title="Unity 3D Scene"
                   loading="lazy"
                   allow="fullscreen; xr-spatial-tracking; gamepad"
@@ -141,7 +303,6 @@
           </div>
         </div>
 
-
         <!-- Center: Chat -->
         <form id="promotion-form" class="panel-center" method="post">
             {% csrf_token %}
@@ -154,7 +315,7 @@
                 </div>
                 <div class="chat-input">
                     <textarea id="promotionText" name="promotion_text" class="form-control" placeholder="在此输入您的问题"></textarea>
-                    <button type="submit" id="submit-button" class="btn btn-primary">提问</button>
+                    <button type="submit" id="submit-button" class="btn btn-primary">提交问题</button>
                 </div>
             </div>
 
@@ -170,24 +331,31 @@
             <aside id="sidebar" class="panel-right">
                 <div class="sidebar">
                     <div class="sidebar-header">
-                        <div class="fw-bold">模型选择</div>
+                        <!-- clickable header to toggle collapse -->
+                        <button
+                            class="btn btn-link p-0 sidebar-collapse-toggle d-flex align-items-center justify-content-between w-100 text-decoration-none"
+                            type="button"
+                            data-bs-toggle="collapse"
+                            data-bs-target="#modelCollapse"
+                            aria-expanded="true"
+                            aria-controls="modelCollapse"
+                        >
+                            <span class="fw-bold">模型选择</span>
+                            <span class="collapse-icon ms-1 small">▾</span>
+                        </button>
                     </div>
-                    <div class="sidebar-body">
+
+                    <!-- collapsible body -->
+                    <div id="modelCollapse" class="sidebar-body collapse show">
                         <div class="form-group mb-3">
                             <label for="modelSelect" class="form-label">选择模型</label>
-                            <select id="modelSelect" name="model_select" class="form-control">
-                                <option value="l-deepseek">本地-深度求索</option>
-                                <option value="l-gemma">本地-Gemma</option>
-                                <option value="r-kimi">云端-Kimi</option>
-                                <option value="r-baidu">云端-文心一言</option>
-                                <option value="l-ziya">本地-姜子牙</option>
-                                <option value="l-other">本地-其他</option>
-                            </select>
+                            {{ form.model_select }}
                         </div>
                         <div class="text-muted small">（预留扩展区域）</div>
                     </div>
                 </div>
             </aside>
+
         </form>
     </div>
 </div>
@@ -431,20 +599,20 @@
     return { msg, video, btn };
   }
 
-  async function enterFullscreenIfPossible(el) {
-    if (el.requestFullscreen) { await el.requestFullscreen(); return true; }
-    if (el.webkitEnterFullscreen) { el.webkitEnterFullscreen(); return true; } // iOS Safari
-    return false;
-  }
+  // async function enterFullscreenIfPossible(el) {
+  //   if (el.requestFullscreen) { await el.requestFullscreen(); return true; }
+  //   if (el.webkitEnterFullscreen) { el.webkitEnterFullscreen(); return true; } // iOS Safari
+  //   return false;
+  // }
 
-  async function playIntroFullscreen(videoEl) {
-    // Must be inside a user gesture to succeed in all browsers
-    videoEl.muted = true;         // autoplay requirement
-    await videoEl.play();         // start playback
-    try { await enterFullscreenIfPossible(videoEl); } catch(e) { /* ignore */ }
-    // Optionally unmute after entering FS (may still require user gesture on some devices)
-    setTimeout(() => { try { videoEl.muted = false; } catch{} }, 300);
-  }
+  // async function playIntroFullscreen(videoEl) {
+  //   // Must be inside a user gesture to succeed in all browsers
+  //   videoEl.muted = true;         // autoplay requirement
+  //   await videoEl.play();         // start playback
+  //   try { await enterFullscreenIfPossible(videoEl); } catch(e) { /* ignore */ }
+  //   // Optionally unmute after entering FS (may still require user gesture on some devices)
+  //   setTimeout(() => { try { videoEl.muted = false; } catch{} }, 300);
+  // }
 
   (function setupIntroVideo() {
     const layout = document.getElementById('appLayout');
@@ -462,7 +630,15 @@
     const intro = makeAIVideoBubble(videoSrc);
     if (messages.firstChild) messages.insertBefore(intro.msg, messages.firstChild);
     else messages.appendChild(intro.msg);
-
+    // NEW: append a short welcome/introduction area under the video
+    const welcomeText = layout.getAttribute('data-intro-welcome') || '';
+    if (welcomeText) {
+      const welcome = document.createElement('div');
+      welcome.className = 'intro-welcome';
+      // Use safe text rendering; supports \n if you include it
+      welcome.innerHTML = textToSafeHtml(welcomeText);
+      intro.msg.querySelector('.bubble')?.appendChild(welcome);
+    }
     // Show one-tap gate (required for fullscreen policy)
     gate.hidden = false;
 
@@ -481,7 +657,43 @@
     }, { once: true });
   })();
 </script>
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        var collapseEl = document.getElementById('modelCollapse');
+        if (!collapseEl || typeof bootstrap === 'undefined') return;
 
+        // Create Collapse instance but don't toggle automatically
+        var modelCollapse = new bootstrap.Collapse(collapseEl, { toggle: false });
+
+        // Default state: collapsed on mobile (<768px), expanded on larger screens
+        function setInitialCollapseState() {
+            if (window.matchMedia('(max-width: 767.98px)').matches) {
+                modelCollapse.hide();
+            } else {
+                modelCollapse.show();
+            }
+        }
+        setInitialCollapseState();
+
+        // Update arrow icon
+        var toggleBtn = document.querySelector('.sidebar-collapse-toggle');
+        var icon = toggleBtn ? toggleBtn.querySelector('.collapse-icon') : null;
+
+        collapseEl.addEventListener('shown.bs.collapse', function () {
+            if (icon) icon.textContent = '▾';
+        });
+        collapseEl.addEventListener('hidden.bs.collapse', function () {
+            if (icon) icon.textContent = '▸';
+        });
+
+        // (optional) respond to orientation/resize changes
+        window.addEventListener('resize', function () {
+            // Only re-apply when crossing the mobile/desktop boundary
+            // to avoid janky behaviour while user is actively toggling
+            setInitialCollapseState();
+        });
+    });
+</script>
 
 </body>
 </html>
