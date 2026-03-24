@@ -17,6 +17,7 @@ from .view_helper import (
 
 
 PROMOTIONS_STATIC_DIR = Path(__file__).resolve().parent / 'static' / 'promotions'
+SINGLE_MODEL_CONFIG_PATH = PROMOTIONS_STATIC_DIR / 'single_model_config.json'
 OLLAMA_CHAT_URL = 'http://localhost:11434/api/chat'
 LOCAL_MODEL_MAP = {
     'l-deepseek': 'deepseek-r1:32b',
@@ -129,6 +130,30 @@ def _save_latest_response_text(response_text: str):
     input_fpath.write_text(response_text.replace('**', '').replace('\n', ''), encoding='utf-8')
 
 
+def _load_single_model_config():
+    if SINGLE_MODEL_CONFIG_PATH.exists():
+        try:
+            return json.loads(SINGLE_MODEL_CONFIG_PATH.read_text(encoding='utf-8'))
+        except Exception:
+            pass
+    return {
+        'ollama_host': '127.0.0.1',
+        'ollama_port': 11434,
+    }
+
+
+def _save_single_model_config(host: str, port):
+    PROMOTIONS_STATIC_DIR.mkdir(parents=True, exist_ok=True)
+    payload = {
+        'ollama_host': host,
+        'ollama_port': int(port),
+    }
+    SINGLE_MODEL_CONFIG_PATH.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2),
+        encoding='utf-8',
+    )
+
+
 def ollama_models_view(request):
     host = request.GET.get('host', '127.0.0.1').strip()
     port = request.GET.get('port', '11434').strip()
@@ -153,6 +178,7 @@ def setup_view(request):
     agents = Agent.objects.all().order_by('-is_active', 'name')
     agent_form = AgentForm()
     knowledge_docs = KnowledgeDocument.objects.all().order_by('-created_at')
+    single_model_config = _load_single_model_config()
     upload_message = None
 
     if request.method == 'POST':
@@ -221,6 +247,24 @@ def setup_view(request):
                 agent.delete()
             agents = Agent.objects.all().order_by('-is_active', 'name')
 
+        elif form_type == 'single_model_config':
+            host = request.POST.get('ollama_host', '').strip()
+            port = request.POST.get('ollama_port', '').strip()
+            previous_config = _load_single_model_config()
+
+            try:
+                available_models = _fetch_ollama_models(host, port)
+                if not available_models:
+                    single_model_config = previous_config
+                    upload_message = '单模型配置保存失败: 已连接 Ollama，但未获取到任何模型，已保留原配置。'
+                else:
+                    _save_single_model_config(host, port)
+                    single_model_config = _load_single_model_config()
+                    upload_message = '单模型配置已更新。'
+            except Exception as e:
+                single_model_config = previous_config
+                upload_message = f'单模型配置保存失败: 无法连接 Ollama 服务（{type(e).__name__}: {e}），已保留原配置。'
+
         elif form_type == 'upload_knowledge_doc':
             upload_file = request.FILES.get('knowledge_file')
             title = request.POST.get('title', '') or (upload_file.name if upload_file else '未命名文件')
@@ -243,6 +287,7 @@ def setup_view(request):
         'agent_form': agent_form,
         'agents': agents,
         'knowledge_docs': knowledge_docs,
+        'single_model_config': single_model_config,
         'upload_message': upload_message,
     })
 

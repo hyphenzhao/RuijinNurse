@@ -38,11 +38,12 @@
         .message.ai .bubble{background:#f8f9fa;border-top-left-radius:.25rem;}
         .bubble .thinking{color:#6c757d;margin-bottom:.25rem;font-size:.95rem;display:flex;align-items:center;gap:.25rem;}
         .bubble .answer{color:#212529;}
-        .bubble .answer .markdown-body{line-height:1.6;}
+        .bubble .answer .markdown-body{line-height:1.5;}
+        .bubble .answer .markdown-body p{margin:0 0 .35rem;}
         .bubble .answer .markdown-body p:last-child{margin-bottom:0;}
         .bubble .answer .markdown-body ul,
-        .bubble .answer .markdown-body ol{padding-left:1.25rem;margin-bottom:.75rem;}
-        .bubble .answer .markdown-body li{margin-bottom:.25rem;}
+        .bubble .answer .markdown-body ol{padding-left:1.25rem;margin:.25rem 0 .4rem;}
+        .bubble .answer .markdown-body li{margin-bottom:.1rem;}
         .bubble .answer .markdown-body h1,
         .bubble .answer .markdown-body h2,
         .bubble .answer .markdown-body h3,
@@ -50,8 +51,13 @@
         .bubble .answer .markdown-body a{color:#0d6efd;word-break:break-all;}
         .bubble .answer .markdown-body code{background:#eef2f7;padding:.1rem .3rem;border-radius:.25rem;font-size:.9em;}
         .bubble .answer .markdown-body pre{background:#111827;color:#f9fafb;padding:.75rem;border-radius:.5rem;overflow:auto;}
-        .inline-video-wrap{margin-top:.75rem;}
-        .inline-video-wrap video{width:100%;height:auto;border-radius:.5rem;display:block;}
+        .inline-media-card{margin-top:.85rem;padding:.75rem;border:1px solid rgba(13,110,253,.18);border-radius:.75rem;background:rgba(13,110,253,.04);}
+        .inline-media-title{font-size:.9rem;font-weight:600;color:#0d6efd;margin-bottom:.5rem;}
+        .inline-media-wrap video,
+        .inline-media-wrap img,
+        .inline-media-wrap iframe{width:100%;height:auto;border-radius:.5rem;display:block;border:0;background:#fff;}
+        .inline-media-wrap iframe{min-height:420px;}
+        .inline-media-link{display:inline-flex;align-items:center;gap:.35rem;margin-top:.5rem;color:#0d6efd;text-decoration:none;font-size:.92rem;}
 
         /* jumping dots */
         .dots { display:inline-block; }
@@ -403,6 +409,14 @@
     return trimmed;
   }
 
+  function getMediaType(url){
+    const clean = (url || '').toLowerCase();
+    if (clean.endsWith('.mp4')) return 'video';
+    if (/(\.png|\.jpg|\.jpeg|\.gif|\.webp)$/.test(clean)) return 'image';
+    if (clean.endsWith('.pdf')) return 'pdf';
+    return null;
+  }
+
   function renderMarkdownSafe(text){
     let rendered = md.render(text || '');
     rendered = rendered.replace(/href="static\//g, 'href="/static/');
@@ -410,46 +424,116 @@
     return DOMPurify.sanitize(rendered);
   }
 
-  function findMp4Links(text){
-    const out = new Set();
+  function findEmbeddedMedia(text){
+    const items = [];
+    const seen = new Set();
     const source = text || '';
-
-    const markdownLinkRe = /\[[^\]]*\]\(([^)\s]+\.mp4)\)/ig;
-    const rawHttpRe = /(https?:\/\/[^\s"'<>]+?\.mp4)\b/ig;
-    const rawStaticRe = /(?<![\(\w\/-])(\/?static\/[^\s"'<>]+?\.mp4)\b/ig;
+    const markdownLinkRe = /\[([^\]]*)\]\(([^)\s]+)\)/ig;
+    const rawMediaRe = /(?<![\(\w\/-])((?:https?:\/\/|\/?static\/)[^\s"'<>]+?\.(?:mp4|png|jpg|jpeg|gif|webp|pdf))\b/ig;
 
     let m;
     while ((m = markdownLinkRe.exec(source)) !== null) {
-      out.add(normalizeMediaUrl(m[1].replace(/[)\]\}\.,;]+$/,'')));
-    }
-    while ((m = rawHttpRe.exec(source)) !== null) {
-      out.add(normalizeMediaUrl(m[1].replace(/[)\]\}\.,;]+$/,'')));
-    }
-    while ((m = rawStaticRe.exec(source)) !== null) {
-      out.add(normalizeMediaUrl(m[1].replace(/[)\]\}\.,;]+$/,'')));
+      const label = (m[1] || '').trim();
+      const url = normalizeMediaUrl((m[2] || '').replace(/[)\]\}\.,;]+$/,''));
+      const type = getMediaType(url);
+      if (!type || seen.has(url)) continue;
+      items.push({ label: label || url.split('/').pop(), url, type, fromMarkdown: true });
+      seen.add(url);
     }
 
-    return [...out];
+    while ((m = rawMediaRe.exec(source)) !== null) {
+      const url = normalizeMediaUrl((m[1] || '').replace(/[)\]\}\.,;]+$/,''));
+      const type = getMediaType(url);
+      if (!type || seen.has(url)) continue;
+      items.push({ label: url.split('/').pop(), url, type, fromMarkdown: false });
+      seen.add(url);
+    }
+
+    return items;
   }
 
-  function appendInlineVideos(answerEl, text){
-    const mp4s = findMp4Links(text);
-    mp4s.forEach(url => {
+  function stripEmbeddedMediaMarkdown(text, mediaItems){
+    let cleaned = text || '';
+    mediaItems.forEach(item => {
+      const escapedUrl = item.url
+        .replace(/^\//, '')
+        .replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const escapedLabel = (item.label || '')
+        .replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+      cleaned = cleaned.replace(
+        new RegExp(`\\[${escapedLabel}\\]\\((?:\\/?${escapedUrl}|${escapedUrl})\\)`, 'g'),
+        `${item.label}（见下方资料）`
+      );
+      cleaned = cleaned.replace(new RegExp(`(^|\\s)(\\/?${escapedUrl})`, 'g'), '$1[已嵌入资料]');
+    });
+    return cleaned;
+  }
+
+  function appendInlineMedia(answerEl, mediaItems){
+    mediaItems.forEach(item => {
+      const card = document.createElement('div');
+      card.className = 'inline-media-card';
+
+      const title = document.createElement('div');
+      title.className = 'inline-media-title';
+      title.textContent = item.type === 'video'
+        ? `视频资料：${item.label}`
+        : item.type === 'image'
+          ? `图片资料：${item.label}`
+          : `PDF资料：${item.label}`;
+      card.appendChild(title);
+
       const wrap = document.createElement('div');
-      wrap.className = 'inline-video-wrap';
-      const video = document.createElement('video');
-      video.src = normalizeMediaUrl(url);
-      video.setAttribute('playsinline','');
-      video.setAttribute('webkit-playsinline','');
-      video.setAttribute('controls','');
-      wrap.appendChild(video);
-      answerEl.appendChild(wrap);
+      wrap.className = 'inline-media-wrap';
+
+      if (item.type === 'video') {
+        const video = document.createElement('video');
+        video.src = item.url;
+        video.setAttribute('playsinline','');
+        video.setAttribute('webkit-playsinline','');
+        video.setAttribute('controls','');
+        wrap.appendChild(video);
+      } else if (item.type === 'image') {
+        const img = document.createElement('img');
+        img.src = item.url;
+        img.alt = item.label;
+        wrap.appendChild(img);
+      } else if (item.type === 'pdf') {
+        const iframe = document.createElement('iframe');
+        iframe.src = item.url;
+        iframe.title = item.label;
+        wrap.appendChild(iframe);
+      }
+
+      card.appendChild(wrap);
+
+      const link = document.createElement('a');
+      link.className = 'inline-media-link';
+      link.href = item.url;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      link.textContent = item.type === 'pdf' ? '在新窗口打开 PDF' : '在新窗口打开资料';
+      card.appendChild(link);
+
+      answerEl.appendChild(card);
     });
   }
 
+  function compactAnswerText(text){
+    return (text || '')
+      .replace(/\r\n/g, '\n')
+      .replace(/\n[\t ]+/g, '\n')
+      .replace(/\n\s*\n+/g, '\n')
+      .trim();
+  }
+
   function renderAnswerContent(answerEl, text){
-    answerEl.innerHTML = '<strong>答复：</strong><div class="markdown-body mt-2">' + renderMarkdownSafe(text) + '</div>';
-    appendInlineVideos(answerEl, text);
+    const compactedText = compactAnswerText(text);
+    const mediaItems = findEmbeddedMedia(compactedText);
+    const cleanedText = stripEmbeddedMediaMarkdown(compactedText, mediaItems);
+    answerEl.innerHTML = '<strong>答复：</strong><div class="markdown-body mt-2">' + renderMarkdownSafe(cleanedText) + '</div>';
+    appendInlineMedia(answerEl, mediaItems);
   }
 </script>
 <script>

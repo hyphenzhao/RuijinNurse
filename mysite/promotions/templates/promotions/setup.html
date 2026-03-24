@@ -175,6 +175,19 @@
             font-weight: 600;
         }
 
+        .config-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 12px;
+            border-radius: 999px;
+            background: #eff6ff;
+            border: 1px solid #bfdbfe;
+            color: #1d4ed8;
+            font-size: 13px;
+            font-weight: 600;
+        }
+
         .status-active {
             background: #dcfce7;
             color: #166534;
@@ -257,6 +270,45 @@
                 <p class="hint">管理本地知识文档与 Ollama 智能体配置。</p>
             </div>
             <a class="back-link" href="{% url 'promotion' %}">← 返回宣讲页面</a>
+        </div>
+
+        <div class="section">
+            <div class="section-header">
+                <div>
+                    <h2>单模型配置（非智能体）</h2>
+                    <p class="hint">仅配置一个默认的 Ollama 服务与模型，暂时只保存在系统管理页，尚未接入 promotion 页面。</p>
+                </div>
+                <div class="config-badge">当前保存：{{ single_model_config.ollama_host }}:{{ single_model_config.ollama_port }}</div>
+            </div>
+
+            <form method="POST" id="singleModelConfigForm">
+                {% csrf_token %}
+                <input type="hidden" name="form_type" value="single_model_config">
+
+                <div class="button-row" style="align-items:flex-end;">
+                    <p style="flex:1; margin:0;">
+                        <label for="single_ollama_host">Ollama IP / 主机名</label>
+                        <input type="text" id="single_ollama_host" name="ollama_host" value="{{ single_model_config.ollama_host }}" required>
+                    </p>
+                    <p style="width:160px; margin:0;">
+                        <label for="single_ollama_port">Ollama 端口</label>
+                        <input type="number" id="single_ollama_port" name="ollama_port" value="{{ single_model_config.ollama_port }}" required>
+                    </p>
+                    <button class="btn btn-secondary" type="button" id="fetchSingleModelsBtn">获取模型</button>
+                </div>
+                <p id="singleModelFetchStatus" class="hint">请先填写 Ollama 地址并点击“获取模型”。</p>
+
+                <div>
+                    <label>可用模型列表</label>
+                    <div id="singleModelList" class="hint" style="margin-top:8px; padding:10px 12px; border:1px solid var(--border); border-radius:8px; background:#fff; min-height:44px;">
+                        尚未获取模型列表。
+                    </div>
+                </div>
+
+                <div class="button-row" style="margin-top:12px;">
+                    <button class="btn btn-primary" type="submit" id="saveSingleModelConfigBtn" disabled>保存单模型配置</button>
+                </div>
+            </form>
         </div>
 
         <div class="section">
@@ -539,6 +591,15 @@
             const cancelEditBtn = document.getElementById('cancelEditAgentModalBtn');
             const editButtons = document.querySelectorAll('.edit-agent-btn');
 
+            const singleState = {
+                host: document.getElementById('single_ollama_host'),
+                port: document.getElementById('single_ollama_port'),
+                listBox: document.getElementById('singleModelList'),
+                saveBtn: document.getElementById('saveSingleModelConfigBtn'),
+                fetchBtn: document.getElementById('fetchSingleModelsBtn'),
+                status: document.getElementById('singleModelFetchStatus'),
+            };
+
             const createState = {
                 host: document.getElementById('create_ollama_host'),
                 port: document.getElementById('create_ollama_port'),
@@ -572,15 +633,15 @@
             }
 
             function setEditableState(state, enabled) {
-                state.model.disabled = !enabled;
-                state.systemPrompt.disabled = !enabled;
-                state.knowledge.disabled = !enabled;
-                state.isActive.disabled = !enabled;
+                if (state.model) state.model.disabled = !enabled;
+                if (state.systemPrompt) state.systemPrompt.disabled = !enabled;
+                if (state.knowledge) state.knowledge.disabled = !enabled;
+                if (state.isActive) state.isActive.disabled = !enabled;
                 state.saveBtn.disabled = !enabled;
             }
 
             function clearModelOptions(selectEl) {
-                selectEl.innerHTML = '';
+                if (selectEl) selectEl.innerHTML = '';
             }
 
             function fillModelOptions(selectEl, models, selectedModel) {
@@ -600,6 +661,59 @@
                     selectEl.value = selectedModel;
                 } else {
                     selectEl.selectedIndex = 0;
+                }
+            }
+
+            function renderSingleModelList(models) {
+                if (!models || !models.length) {
+                    singleState.listBox.innerHTML = '<span class="hint">未获取到可用模型。</span>';
+                    return;
+                }
+                singleState.listBox.innerHTML = '<ul style="margin:0; padding-left:18px;">' +
+                    models.map(function (modelName) {
+                        return `<li>${modelName}</li>`;
+                    }).join('') +
+                    '</ul>';
+            }
+
+            async function fetchSingleModels() {
+                const host = singleState.host.value.trim();
+                const port = singleState.port.value.trim();
+
+                setEditableState(singleState, false);
+                renderSingleModelList([]);
+
+                if (!host || !port) {
+                    singleState.status.textContent = '请先填写 Ollama IP 和端口。';
+                    return false;
+                }
+
+                singleState.status.textContent = '正在连接 Ollama 并获取模型列表...';
+                singleState.fetchBtn.disabled = true;
+
+                try {
+                    const url = `${modelApiUrl}?host=${encodeURIComponent(host)}&port=${encodeURIComponent(port)}`;
+                    const response = await fetch(url, { method: 'GET' });
+                    const data = await response.json();
+
+                    if (!response.ok || !data.ok) {
+                        throw new Error(data.error || '无法获取模型列表');
+                    }
+
+                    if (!data.models || !data.models.length) {
+                        singleState.status.textContent = '已连接 Ollama，但未获取到可用模型，当前配置不会保存。';
+                        return false;
+                    }
+
+                    renderSingleModelList(data.models);
+                    setEditableState(singleState, true);
+                    singleState.status.textContent = `已获取 ${data.models.length} 个模型，可保存当前 IP 和端口配置。`;
+                    return true;
+                } catch (error) {
+                    singleState.status.textContent = `连接失败：${error.message}`;
+                    return false;
+                } finally {
+                    singleState.fetchBtn.disabled = false;
                 }
             }
 
@@ -660,6 +774,12 @@
                 setEditableState(createState, false);
             }
 
+            setEditableState(singleState, false);
+            renderSingleModelList([]);
+            if (singleState.host.value && singleState.port.value) {
+                fetchSingleModels();
+            }
+
             openCreateBtn.addEventListener('click', function () {
                 resetCreateModal();
                 openModal(createBackdrop);
@@ -676,6 +796,10 @@
             });
             cancelEditBtn.addEventListener('click', function () {
                 closeModal(editBackdrop);
+            });
+
+            singleState.fetchBtn.addEventListener('click', function () {
+                fetchSingleModels();
             });
 
             createState.fetchBtn.addEventListener('click', function () {
