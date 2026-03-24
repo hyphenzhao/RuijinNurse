@@ -40,13 +40,14 @@ class PromotionForm(forms.Form):
 
     def __init__(self, *args, **kwargs):
         agent_choices = kwargs.pop('agent_choices', [])
+        model_choices = kwargs.pop('model_choices', self.LOCAL_MODEL_CHOICES)
         super().__init__(*args, **kwargs)
 
         dynamic_agent_choices = [
             (f'agent:{a.slug}', f'智能体（{a.name}）')
             for a in agent_choices
         ]
-        self.fields['model_select'].choices = dynamic_agent_choices + self.LOCAL_MODEL_CHOICES
+        self.fields['model_select'].choices = dynamic_agent_choices + model_choices
         self.fields['model_select'].widget.attrs.update({
             'id': 'modelSelect',
             'class': 'form-control',

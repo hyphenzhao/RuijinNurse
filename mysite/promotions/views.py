@@ -98,6 +98,22 @@ def _collect_ollama_response(model_key: str, role_text: str, knowledge_text: str
     return response_text
 
 
+def _get_runtime_model_choices():
+    config = _load_single_model_config()
+    host = config.get('ollama_host', '127.0.0.1')
+    port = config.get('ollama_port', 11434)
+
+    try:
+        models = _fetch_ollama_models(host, port)
+        if models:
+            return [(f'model:{model_name}', f'本地-{model_name}') for model_name in models]
+    except Exception:
+        pass
+
+    return PromotionForm.LOCAL_MODEL_CHOICES
+
+
+
 def _get_chat_target(model_key: str):
     if model_key.startswith('agent:'):
         slug = model_key.split(':', 1)[1]
@@ -107,6 +123,15 @@ def _get_chat_target(model_key: str):
             'model_name': agent.ollama_model,
             'role_text': agent.system_prompt or '',
             'knowledge_text': agent.knowledge or '',
+        }
+
+    if model_key.startswith('model:'):
+        config = _load_single_model_config()
+        return {
+            'base_url': _build_ollama_base_url(config.get('ollama_host', '127.0.0.1'), config.get('ollama_port', 11434)),
+            'model_name': model_key.split(':', 1)[1],
+            'role_text': None,
+            'knowledge_text': None,
         }
 
     return {
@@ -301,7 +326,8 @@ def promotion_view(request):
 
     if request.method == 'POST' and is_ajax:
         agents = Agent.objects.filter(is_active=True).order_by('name')
-        form = PromotionForm(request.POST, agent_choices=agents)
+        model_choices = _get_runtime_model_choices()
+        form = PromotionForm(request.POST, agent_choices=agents, model_choices=model_choices)
         if not form.is_valid():
             return JsonResponse({'error': form.errors}, status=400)
 
@@ -344,7 +370,8 @@ def promotion_view(request):
         return JsonResponse({'chat_history': chat_history, 'audio_url': None})
 
     agents = Agent.objects.filter(is_active=True).order_by('name')
-    form = PromotionForm(agent_choices=agents)
+    model_choices = _get_runtime_model_choices()
+    form = PromotionForm(agent_choices=agents, model_choices=model_choices)
     if 'chat_history' in request.session:
         del request.session['chat_history']
 
@@ -352,6 +379,8 @@ def promotion_view(request):
         'form': form,
         'chat_history': chat_history,
         'show_intro': True,
+        'agent_options': [(f'agent:{agent.slug}', f'智能体（{agent.name}）') for agent in agents],
+        'model_options': model_choices,
     })
 
 
@@ -361,7 +390,8 @@ def promotion_stream(request):
         return JsonResponse({'error': 'POST only'}, status=405)
 
     agents = Agent.objects.filter(is_active=True).order_by('name')
-    form = PromotionForm(request.POST, agent_choices=agents)
+    model_choices = _get_runtime_model_choices()
+    form = PromotionForm(request.POST, agent_choices=agents, model_choices=model_choices)
     if not form.is_valid():
         return JsonResponse({'error': form.errors}, status=400)
 
