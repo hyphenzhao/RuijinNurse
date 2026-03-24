@@ -4,6 +4,7 @@ from . import views
 
 urlpatterns = [
     path('', views.promotion_view, name='promotion'),
-    path("stream/", views.promotion_stream, name="promotion_stream"),  # NEW
+    path("stream/", views.promotion_stream, name="promotion_stream"),
     path('setup/', views.setup_view, name='setup'),
+    path('setup/ollama-models/', views.ollama_models_view, name='ollama_models'),
 ]

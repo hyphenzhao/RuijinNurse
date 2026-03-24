@@ -2,209 +2,725 @@
 <html lang="zh">
 <head>
     <meta charset="UTF-8">
-    <title>角色设定与智能体管理</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>系统管理</title>
     <style>
-        .container {
+        :root {
+            --bg: #f6f8fb;
+            --card: #ffffff;
+            --border: #d9e0ea;
+            --text: #1f2937;
+            --muted: #6b7280;
+            --primary: #2563eb;
+            --primary-dark: #1d4ed8;
+            --success: #059669;
+            --danger: #dc2626;
+        }
+
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            font-family: Arial, "Microsoft YaHei", sans-serif;
+            background: var(--bg);
+            color: var(--text);
+        }
+
+        .page {
+            max-width: 1200px;
+            margin: 24px auto;
+            padding: 0 16px 24px;
+        }
+
+        .page-header {
             display: flex;
             justify-content: space-between;
-            margin: 20px;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 20px;
         }
-        .column {
-            flex: 0 0 48%;
-            border: 1px solid #ccc;
-            padding: 15px;
-            box-sizing: border-box;
-            border-radius: 5px;
-            background-color: #f9f9f9;
+
+        .page-header h1 {
+            margin: 0;
+            font-size: 28px;
         }
-        textarea {
-            width: 100%;
-            height: 200px;
-            margin-top: 10px;
-            box-sizing: border-box;
+
+        .back-link {
+            color: var(--primary);
+            text-decoration: none;
             font-size: 14px;
         }
-        .button-group {
-            margin-top: 10px;
-            text-align: center;
-        }
-        .button-group button {
-            margin: 5px;
-            padding: 5px 15px;
-            font-size: 14px;
-        }
+
         .section {
-            margin: 20px;
-            border: 1px solid #ccc;
-            padding: 15px;
-            border-radius: 5px;
-            background-color: #fdfdfd;
+            margin-bottom: 20px;
+            border: 1px solid var(--border);
+            padding: 18px;
+            border-radius: 12px;
+            background: var(--card);
+            box-shadow: 0 4px 14px rgba(0, 0, 0, 0.04);
         }
+
+        .section-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+            margin-bottom: 12px;
+        }
+
+        .section h2, .section h3 {
+            margin: 0;
+        }
+
+        .hint {
+            font-size: 13px;
+            color: var(--muted);
+            margin: 8px 0 0;
+            line-height: 1.5;
+        }
+
+        .message-success {
+            color: var(--success);
+            font-size: 13px;
+            margin: 10px 0;
+        }
+
         table {
             width: 100%;
             border-collapse: collapse;
             margin-top: 10px;
+            background: white;
         }
+
         th, td {
-            border: 1px solid #ddd;
-            padding: 6px 8px;
-            font-size: 13px;
+            border: 1px solid #e5e7eb;
+            padding: 10px 12px;
+            font-size: 14px;
+            text-align: left;
+            vertical-align: top;
         }
+
         th {
-            background: #eee;
+            background: #f3f4f6;
         }
+
+        .button-row {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+
+        button, .btn {
+            appearance: none;
+            border: 0;
+            border-radius: 8px;
+            padding: 9px 14px;
+            font-size: 14px;
+            cursor: pointer;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .btn-primary {
+            background: var(--primary);
+            color: white;
+        }
+
+        .btn-primary:hover { background: var(--primary-dark); }
+
+        .btn-secondary {
+            background: #eef2ff;
+            color: var(--primary);
+            border: 1px solid #c7d2fe;
+        }
+
+        .btn-danger {
+            background: #fee2e2;
+            color: var(--danger);
+            border: 1px solid #fecaca;
+        }
+
+        input[type="text"],
+        textarea,
+        select {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            font-size: 14px;
+            margin-top: 6px;
+        }
+
+        textarea {
+            min-height: 140px;
+            resize: vertical;
+        }
+
         .errorlist {
-            color: red;
+            color: var(--danger);
             margin: 0 0 10px 0;
             padding: 0;
             list-style: none;
+            font-size: 13px;
+        }
+
+        .status-pill {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 999px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .status-active {
+            background: #dcfce7;
+            color: #166534;
+        }
+
+        .status-inactive {
+            background: #f3f4f6;
+            color: #4b5563;
+        }
+
+        .modal-backdrop {
+            position: fixed;
+            inset: 0;
+            background: rgba(15, 23, 42, 0.45);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            padding: 16px;
+            z-index: 1000;
+        }
+
+        .modal-backdrop.open {
+            display: flex;
+        }
+
+        .modal {
+            width: min(760px, 100%);
+            max-height: 90vh;
+            overflow: auto;
+            background: white;
+            border-radius: 14px;
+            border: 1px solid var(--border);
+            box-shadow: 0 20px 50px rgba(0,0,0,0.2);
+            padding: 20px;
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 14px;
+        }
+
+        .modal-close {
+            background: transparent;
+            color: #6b7280;
+            font-size: 22px;
+            padding: 4px 10px;
+        }
+
+        .modal form p {
+            margin: 0 0 14px;
+        }
+
+        .empty-state {
+            text-align: center;
+            color: var(--muted);
+            padding: 18px 12px;
+        }
+
+        @media (max-width: 768px) {
+            .page-header, .section-header {
+                align-items: flex-start;
+                flex-direction: column;
+            }
+
+            th, td {
+                font-size: 13px;
+                padding: 8px;
+            }
         }
     </style>
 </head>
 <body>
-    <h1 style="text-align:center;">角色设定、背景知识与智能体管理</h1>
-
-    <!-- 1) 原来的角色 / 背景编辑表单 -->
-<!--     <form method="POST">
-        {% csrf_token %}
-        <input type="hidden" name="form_type" value="role_knowledge">
-        <div class="container">
-            <div class="column">
-                <h2>角色设定</h2>
-                <textarea name="role_text">{{ role_text }}</textarea>
-                <div class="button-group">
-                    <button type="submit" name="action" value="load_role">加载角色</button>
-                    <button type="submit" name="action" value="save_role">保存角色</button>
-                </div>
-            </div>
-
-            <div class="column">
-                <h2>背景知识</h2>
-                <textarea name="knowledge_text">{{ knowledge_text }}</textarea>
-                <div class="button-group">
-                    <button type="submit" name="action" value="load_knowledge">加载背景</button>
-                    <button type="submit" name="action" value="save_knowledge">保存背景</button>
-                </div>
-            </div>
-        </div>
-    </form> -->
-    <!-- 1.5) 新增：上传 Word / PPT / PDF 到知识库 -->
-    <div class="section">
-        <h2>上传知识文档（Word / PPT / PDF）</h2>
-        <p style="font-size:13px;color:#666;">
-            上传的文档不会保存原始文件，只会提取文字内容写入数据库，
-            并自动合并到全局背景知识（knowledge.txt）中。
-        </p>
-
-        {% if upload_message %}
-            <p style="color: green; font-size: 13px;">{{ upload_message }}</p>
-        {% endif %}
-
-        <form method="POST" enctype="multipart/form-data">
-            {% csrf_token %}
-            <input type="hidden" name="form_type" value="upload_knowledge_doc">
+    <div class="page">
+        <div class="page-header">
             <div>
-                <label for="id_title">标题（可选）：</label>
-                <input type="text" id="id_title" name="title" style="width:60%;">
+                <h1>系统管理</h1>
+                <p class="hint">管理本地知识文档与 Ollama 智能体配置。</p>
             </div>
-            <div style="margin-top:8px;">
-                <input type="file" name="knowledge_file" accept=".pdf,.docx,.pptx,.doc,.ppt">
-            </div>
-            <div class="button-group">
-                <button type="submit">上传并导入知识</button>
-            </div>
-        </form>
+            <a class="back-link" href="{% url 'promotion' %}">← 返回宣讲页面</a>
+        </div>
 
-        {% if knowledge_docs %}
-            <h3>已导入的知识文档</h3>
+        <div class="section">
+            <div class="section-header">
+                <div>
+                    <h2>已配置的智能体</h2>
+                    <p class="hint">当前项目中已保存的智能体列表。可直接启用、停用或删除。</p>
+                </div>
+                <button type="button" id="openAgentModalBtn" class="btn btn-primary">新建智能体+</button>
+            </div>
+
             <table>
                 <thead>
                     <tr>
-                        <th>标题</th>
-                        <th>创建时间</th>
-                        <th>内容预览</th>
+                        <th>名称</th>
+                        <th>slug</th>
+                        <th>Ollama 服务</th>
+                        <th>Ollama 模型名</th>
+                        <th>状态</th>
+                        <th>操作</th>
                     </tr>
                 </thead>
                 <tbody>
-                    {% for d in knowledge_docs %}
+                    {% for a in agents %}
                     <tr>
-                        <td>{{ d.title }}</td>
-                        <td>{{ d.created_at|date:"Y-m-d H:i" }}</td>
-                        <td>{{ d.content|truncatechars:80 }}</td>
+                        <td>{{ a.name }}</td>
+                        <td>{{ a.slug }}</td>
+                        <td>{{ a.ollama_host }}:{{ a.ollama_port }}</td>
+                        <td>{{ a.ollama_model }}</td>
+                        <td>
+                            {% if a.is_active %}
+                                <span class="status-pill status-active">启用中</span>
+                            {% else %}
+                                <span class="status-pill status-inactive">已停用</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <div class="button-row">
+                                <button
+                                    type="button"
+                                    class="btn btn-secondary edit-agent-btn"
+                                    data-agent-id="{{ a.id }}"
+                                    data-agent-name="{{ a.name }}"
+                                    data-agent-slug="{{ a.slug }}"
+                                    data-agent-host="{{ a.ollama_host }}"
+                                    data-agent-port="{{ a.ollama_port }}"
+                                    data-agent-model="{{ a.ollama_model }}"
+                                    data-agent-system-prompt="{{ a.system_prompt }}"
+                                    data-agent-knowledge="{{ a.knowledge }}"
+                                    data-agent-active="{% if a.is_active %}true{% else %}false{% endif %}"
+                                >编辑</button>
+
+                                <form method="POST" style="display:inline;">
+                                    {% csrf_token %}
+                                    <input type="hidden" name="form_type" value="agent_action">
+                                    <input type="hidden" name="agent_id" value="{{ a.id }}">
+                                    <button class="btn btn-secondary" type="submit" name="action" value="toggle_active">
+                                        {% if a.is_active %}停用{% else %}启用{% endif %}
+                                    </button>
+                                </form>
+
+                                <form method="POST" style="display:inline;" onsubmit="return confirm('确定要删除该智能体吗？');">
+                                    {% csrf_token %}
+                                    <input type="hidden" name="form_type" value="agent_action">
+                                    <input type="hidden" name="agent_id" value="{{ a.id }}">
+                                    <button class="btn btn-danger" type="submit" name="action" value="delete">删除</button>
+                                </form>
+                            </div>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="6" class="empty-state">暂无智能体，点击右上角“新建智能体+”开始创建。</td>
                     </tr>
                     {% endfor %}
                 </tbody>
             </table>
-        {% endif %}
-    </div>
-    <!-- 2) 新增：Ollama 智能体管理 -->
-    <div class="section">
-        <h2>Ollama 智能体设置</h2>
-        <p style="font-size:13px;color:#666;">
-            在这里为 Ollama 模型创建不同的“智能体”，每个智能体可以有自己的角色设定和背景知识。
-            在 promotion 页面中会以“智能体（名称）”的形式出现在模型下拉框中。
-        </p>
+        </div>
 
-        <form method="POST">
-            {% csrf_token %}
-            <input type="hidden" name="form_type" value="agent">
-            {{ agent_form.as_p }}
-            <button type="submit">保存智能体</button>
-        </form>
+        <div class="section">
+            <div class="section-header">
+                <div>
+                    <h2>上传知识文档（Word / PPT / PDF）</h2>
+                    <p class="hint">
+                        上传的文档不会保存原始文件，只会提取文字内容写入数据库，
+                        并自动合并到全局背景知识（knowledge.txt）中。
+                    </p>
+                </div>
+            </div>
 
-        <h3>已配置的智能体</h3>
-        <table>
-            <thead>
-                <tr>
-                    <th>名称</th>
-                    <th>slug</th>
-                    <th>Ollama 模型名</th>
-                    <th>启用</th>
-                    <th>操作</th>
-                </tr>
-            </thead>
+            {% if upload_message %}
+                <p class="message-success">{{ upload_message }}</p>
+            {% endif %}
 
-            <tbody>
-                {% for a in agents %}
-                <tr>
-                    <td>{{ a.name }}</td>
-                    <td>{{ a.slug }}</td>
-                    <td>{{ a.ollama_model }}</td>
-                    <td>
-                        {% if a.is_active %}
-                            启用中
-                        {% else %}
-                            已停用
-                        {% endif %}
-                    </td>
-                    <td>
-                        <!-- 启用 / 停用 按钮 -->
-                        <form method="POST" style="display:inline;">
-                            {% csrf_token %}
-                            <input type="hidden" name="form_type" value="agent_action">
-                            <input type="hidden" name="agent_id" value="{{ a.id }}">
-                            <button type="submit" name="action" value="toggle_active">
-                                {% if a.is_active %}停用{% else %}启用{% endif %}
-                            </button>
-                        </form>
+            <form method="POST" enctype="multipart/form-data">
+                {% csrf_token %}
+                <input type="hidden" name="form_type" value="upload_knowledge_doc">
+                <div>
+                    <label for="id_title">标题（可选）：</label>
+                    <input type="text" id="id_title" name="title">
+                </div>
+                <div style="margin-top:12px;">
+                    <input type="file" name="knowledge_file" accept=".pdf,.docx,.pptx,.doc,.ppt">
+                </div>
+                <div class="button-row" style="margin-top:12px;">
+                    <button class="btn btn-primary" type="submit">上传并导入知识</button>
+                </div>
+            </form>
 
-                        <!-- 删除按钮 -->
-                        <form method="POST" style="display:inline;" 
-                              onsubmit="return confirm('确定要删除该智能体吗？');">
-                            {% csrf_token %}
-                            <input type="hidden" name="form_type" value="agent_action">
-                            <input type="hidden" name="agent_id" value="{{ a.id }}">
-                            <button type="submit" name="action" value="delete">删除</button>
-                        </form>
-                    </td>
-                </tr>
-                {% empty %}
-                <tr><td colspan="5" style="text-align:center;">暂无智能体</td></tr>
-                {% endfor %}
-            </tbody>
-
-        </table>
+            {% if knowledge_docs %}
+                <h3 style="margin-top:18px;">已导入的知识文档</h3>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>标题</th>
+                            <th>创建时间</th>
+                            <th>内容预览</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for d in knowledge_docs %}
+                        <tr>
+                            <td>{{ d.title }}</td>
+                            <td>{{ d.created_at|date:"Y-m-d H:i" }}</td>
+                            <td>{{ d.content|truncatechars:80 }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            {% endif %}
+        </div>
     </div>
 
+    <div id="agentModalBackdrop" class="modal-backdrop">
+        <div class="modal" role="dialog" aria-modal="true" aria-labelledby="agentModalTitle">
+            <div class="modal-header">
+                <div>
+                    <h2 id="agentModalTitle">新建 Ollama 智能体</h2>
+                    <p class="hint">填写名称、slug、模型名，以及该智能体的系统提示词和知识背景。</p>
+                </div>
+                <button type="button" id="closeAgentModalBtn" class="modal-close" aria-label="关闭">×</button>
+            </div>
+
+            <form method="POST" id="createAgentForm">
+                {% csrf_token %}
+                <input type="hidden" name="form_type" value="agent">
+
+                <p>
+                    <label for="create_name">智能体名称</label>
+                    <input type="text" id="create_name" name="name" required>
+                </p>
+
+                <p>
+                    <label for="create_slug">标识（slug）</label>
+                    <input type="text" id="create_slug" name="slug" required>
+                </p>
+
+                <div class="button-row" style="align-items:flex-end;">
+                    <p style="flex:1; margin:0;">
+                        <label for="create_ollama_host">Ollama IP / 主机名</label>
+                        <input type="text" id="create_ollama_host" name="ollama_host" value="127.0.0.1" required>
+                    </p>
+                    <p style="width:160px; margin:0;">
+                        <label for="create_ollama_port">Ollama 端口</label>
+                        <input type="number" id="create_ollama_port" name="ollama_port" value="11434" required>
+                    </p>
+                    <button class="btn btn-secondary" type="button" id="fetchCreateModelsBtn">获取模型</button>
+                </div>
+                <p id="createModelFetchStatus" class="hint">请先填写 Ollama 地址并点击“获取模型”。</p>
+
+                <p>
+                    <label for="create_ollama_model">Ollama 模型名</label>
+                    <select id="create_ollama_model" name="ollama_model" disabled required></select>
+                </p>
+
+                <p>
+                    <label for="create_system_prompt">角色设定（system prompt）</label>
+                    <textarea id="create_system_prompt" name="system_prompt" disabled></textarea>
+                </p>
+
+                <p>
+                    <label for="create_knowledge">背景知识</label>
+                    <textarea id="create_knowledge" name="knowledge" disabled></textarea>
+                </p>
+
+                <p>
+                    <label style="display:flex;align-items:center;gap:8px;">
+                        <input type="checkbox" id="create_is_active" name="is_active" disabled checked>
+                        是否启用
+                    </label>
+                </p>
+
+                <div class="button-row">
+                    <button class="btn btn-primary" type="submit" id="saveCreateAgentBtn" disabled>保存智能体</button>
+                    <button class="btn btn-secondary" type="button" id="cancelAgentModalBtn">取消</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div id="editAgentModalBackdrop" class="modal-backdrop">
+        <div class="modal" role="dialog" aria-modal="true" aria-labelledby="editAgentModalTitle">
+            <div class="modal-header">
+                <div>
+                    <h2 id="editAgentModalTitle">编辑智能体</h2>
+                    <p class="hint">修改当前智能体的名称、slug、模型和提示词配置。</p>
+                </div>
+                <button type="button" id="closeEditAgentModalBtn" class="modal-close" aria-label="关闭">×</button>
+            </div>
+
+            <form method="POST">
+                {% csrf_token %}
+                <input type="hidden" name="form_type" value="agent_edit">
+                <input type="hidden" name="agent_id" id="edit_agent_id">
+
+                <p>
+                    <label for="edit_name">智能体名称</label>
+                    <input type="text" id="edit_name" name="name" required>
+                </p>
+
+                <p>
+                    <label for="edit_slug">标识（slug）</label>
+                    <input type="text" id="edit_slug" name="slug" required>
+                </p>
+
+                <div class="button-row" style="align-items:flex-end;">
+                    <p style="flex:1; margin:0;">
+                        <label for="edit_ollama_host">Ollama IP / 主机名</label>
+                        <input type="text" id="edit_ollama_host" name="ollama_host" required>
+                    </p>
+                    <p style="width:160px; margin:0;">
+                        <label for="edit_ollama_port">Ollama 端口</label>
+                        <input type="number" id="edit_ollama_port" name="ollama_port" required>
+                    </p>
+                    <button class="btn btn-secondary" type="button" id="fetchEditModelsBtn">获取模型</button>
+                </div>
+                <p id="editModelFetchStatus" class="hint">请先连接 Ollama 服务并获取模型列表。</p>
+
+                <p>
+                    <label for="edit_ollama_model">Ollama 模型名</label>
+                    <select id="edit_ollama_model" name="ollama_model" disabled required></select>
+                </p>
+
+                <p>
+                    <label for="edit_system_prompt">角色设定（system prompt）</label>
+                    <textarea id="edit_system_prompt" name="system_prompt" disabled></textarea>
+                </p>
+
+                <p>
+                    <label for="edit_knowledge">背景知识</label>
+                    <textarea id="edit_knowledge" name="knowledge" disabled></textarea>
+                </p>
+
+                <p>
+                    <label style="display:flex;align-items:center;gap:8px;">
+                        <input type="checkbox" id="edit_is_active" name="is_active" disabled>
+                        是否启用
+                    </label>
+                </p>
+
+                <div class="button-row">
+                    <button class="btn btn-primary" type="submit" id="saveEditAgentBtn" disabled>保存修改</button>
+                    <button class="btn btn-secondary" type="button" id="cancelEditAgentModalBtn">取消</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        (function () {
+            const modelApiUrl = "{% url 'ollama_models' %}";
+
+            const createBackdrop = document.getElementById('agentModalBackdrop');
+            const openCreateBtn = document.getElementById('openAgentModalBtn');
+            const closeCreateBtn = document.getElementById('closeAgentModalBtn');
+            const cancelCreateBtn = document.getElementById('cancelAgentModalBtn');
+
+            const editBackdrop = document.getElementById('editAgentModalBackdrop');
+            const closeEditBtn = document.getElementById('closeEditAgentModalBtn');
+            const cancelEditBtn = document.getElementById('cancelEditAgentModalBtn');
+            const editButtons = document.querySelectorAll('.edit-agent-btn');
+
+            const createState = {
+                host: document.getElementById('create_ollama_host'),
+                port: document.getElementById('create_ollama_port'),
+                model: document.getElementById('create_ollama_model'),
+                systemPrompt: document.getElementById('create_system_prompt'),
+                knowledge: document.getElementById('create_knowledge'),
+                isActive: document.getElementById('create_is_active'),
+                saveBtn: document.getElementById('saveCreateAgentBtn'),
+                fetchBtn: document.getElementById('fetchCreateModelsBtn'),
+                status: document.getElementById('createModelFetchStatus'),
+            };
+
+            const editState = {
+                host: document.getElementById('edit_ollama_host'),
+                port: document.getElementById('edit_ollama_port'),
+                model: document.getElementById('edit_ollama_model'),
+                systemPrompt: document.getElementById('edit_system_prompt'),
+                knowledge: document.getElementById('edit_knowledge'),
+                isActive: document.getElementById('edit_is_active'),
+                saveBtn: document.getElementById('saveEditAgentBtn'),
+                fetchBtn: document.getElementById('fetchEditModelsBtn'),
+                status: document.getElementById('editModelFetchStatus'),
+            };
+
+            function openModal(backdrop) {
+                backdrop.classList.add('open');
+            }
+
+            function closeModal(backdrop) {
+                backdrop.classList.remove('open');
+            }
+
+            function setEditableState(state, enabled) {
+                state.model.disabled = !enabled;
+                state.systemPrompt.disabled = !enabled;
+                state.knowledge.disabled = !enabled;
+                state.isActive.disabled = !enabled;
+                state.saveBtn.disabled = !enabled;
+            }
+
+            function clearModelOptions(selectEl) {
+                selectEl.innerHTML = '';
+            }
+
+            function fillModelOptions(selectEl, models, selectedModel) {
+                clearModelOptions(selectEl);
+                models.forEach(function (modelName) {
+                    const option = document.createElement('option');
+                    option.value = modelName;
+                    option.textContent = modelName;
+                    selectEl.appendChild(option);
+                });
+
+                if (!models.length) {
+                    return;
+                }
+
+                if (selectedModel && models.includes(selectedModel)) {
+                    selectEl.value = selectedModel;
+                } else {
+                    selectEl.selectedIndex = 0;
+                }
+            }
+
+            async function fetchModels(state, selectedModel) {
+                const host = state.host.value.trim();
+                const port = state.port.value.trim();
+
+                clearModelOptions(state.model);
+                setEditableState(state, false);
+
+                if (!host || !port) {
+                    state.status.textContent = '请先填写 Ollama IP 和端口。';
+                    return false;
+                }
+
+                state.status.textContent = '正在连接 Ollama 并获取模型列表...';
+                state.fetchBtn.disabled = true;
+
+                try {
+                    const url = `${modelApiUrl}?host=${encodeURIComponent(host)}&port=${encodeURIComponent(port)}`;
+                    const response = await fetch(url, { method: 'GET' });
+                    const data = await response.json();
+
+                    if (!response.ok || !data.ok) {
+                        throw new Error(data.error || '无法获取模型列表');
+                    }
+
+                    if (!data.models || !data.models.length) {
+                        state.status.textContent = '未获取到可用模型，后续字段已锁定。';
+                        return false;
+                    }
+
+                    fillModelOptions(state.model, data.models, selectedModel);
+                    setEditableState(state, true);
+
+                    if (selectedModel && !data.models.includes(selectedModel)) {
+                        state.status.textContent = '当前已保存模型不在远端列表中，已自动切换为第一个可用模型。';
+                    } else {
+                        state.status.textContent = `已获取 ${data.models.length} 个模型。`;
+                    }
+                    return true;
+                } catch (error) {
+                    state.status.textContent = `连接失败：${error.message}`;
+                    return false;
+                } finally {
+                    state.fetchBtn.disabled = false;
+                }
+            }
+
+            function resetCreateModal() {
+                createState.host.value = '127.0.0.1';
+                createState.port.value = '11434';
+                createState.systemPrompt.value = '';
+                createState.knowledge.value = '';
+                createState.isActive.checked = true;
+                createState.status.textContent = '请先填写 Ollama 地址并点击“获取模型”。';
+                clearModelOptions(createState.model);
+                setEditableState(createState, false);
+            }
+
+            openCreateBtn.addEventListener('click', function () {
+                resetCreateModal();
+                openModal(createBackdrop);
+            });
+            closeCreateBtn.addEventListener('click', function () {
+                closeModal(createBackdrop);
+            });
+            cancelCreateBtn.addEventListener('click', function () {
+                closeModal(createBackdrop);
+            });
+
+            closeEditBtn.addEventListener('click', function () {
+                closeModal(editBackdrop);
+            });
+            cancelEditBtn.addEventListener('click', function () {
+                closeModal(editBackdrop);
+            });
+
+            createState.fetchBtn.addEventListener('click', function () {
+                fetchModels(createState, null);
+            });
+
+            editState.fetchBtn.addEventListener('click', function () {
+                fetchModels(editState, editState.model.dataset.currentValue || '');
+            });
+
+            editButtons.forEach(function (btn) {
+                btn.addEventListener('click', async function () {
+                    document.getElementById('edit_agent_id').value = btn.dataset.agentId || '';
+                    document.getElementById('edit_name').value = btn.dataset.agentName || '';
+                    document.getElementById('edit_slug').value = btn.dataset.agentSlug || '';
+                    document.getElementById('edit_ollama_host').value = btn.dataset.agentHost || '';
+                    document.getElementById('edit_ollama_port').value = btn.dataset.agentPort || '';
+                    document.getElementById('edit_system_prompt').value = btn.dataset.agentSystemPrompt || '';
+                    document.getElementById('edit_knowledge').value = btn.dataset.agentKnowledge || '';
+                    document.getElementById('edit_is_active').checked = (btn.dataset.agentActive === 'true');
+                    document.getElementById('edit_ollama_model').dataset.currentValue = btn.dataset.agentModel || '';
+
+                    clearModelOptions(editState.model);
+                    setEditableState(editState, false);
+                    editState.status.textContent = '正在根据当前 Ollama 地址获取模型列表...';
+                    openModal(editBackdrop);
+                    await fetchModels(editState, btn.dataset.agentModel || '');
+                });
+            });
+
+            [createBackdrop, editBackdrop].forEach(function (backdrop) {
+                backdrop.addEventListener('click', function (event) {
+                    if (event.target === backdrop) {
+                        closeModal(backdrop);
+                    }
+                });
+            });
+
+            document.addEventListener('keydown', function (event) {
+                if (event.key === 'Escape') {
+                    closeModal(createBackdrop);
+                    closeModal(editBackdrop);
+                }
+            });
+        })();
+    </script>
 </body>
 </html>
