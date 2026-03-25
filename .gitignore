@@ -86,8 +86,15 @@ htmlcov/
 [Mm]emoryCaptures/
 [Uu]serSettings/
 
-# The specific folder you mentioned
-Unity/Build/
+# Keep these Unity build folders tracked for upload
+!Unity/Build/
+!Unity/Build/**
+!Unity/Builds/
+!Unity/Builds/**
+!uploads/Unity/Build/
+!uploads/Unity/Build/**
+!uploads/Unity/Builds/
+!uploads/Unity/Builds/**
 
 # Unity crash reports
 sysinfo.txt
