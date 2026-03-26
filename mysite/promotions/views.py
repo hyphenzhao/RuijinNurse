@@ -62,6 +62,8 @@ def _stream_ollama_response_by_target(base_url: str, model_name: str, role_text:
     payload = {
         'model': model_name,
         'messages': _build_messages(role_text, knowledge_text, promotion),
+        'think': True,
+        'stream': True,
     }
     return requests.post(f'{base_url}/api/chat', json=payload, stream=True)
 
@@ -465,8 +467,22 @@ def promotion_stream(request):
                     except json.JSONDecodeError:
                         continue
 
-                    delta = data.get('message', {}).get('content', '')
-                    thinking_delta, answer_delta = _split_thinking_delta(delta, think_state)
+                    message = data.get('message', {}) or {}
+
+                    # Newer Ollama thinking API: reasoning is streamed via message.thinking
+                    direct_thinking_delta = message.get('thinking', '')
+                    if direct_thinking_delta:
+                        think_text += direct_thinking_delta
+                        yield helper_sse('thinking', {'content': direct_thinking_delta})
+
+                    # Final answer text is still streamed via message.content
+                    delta = message.get('content', '')
+
+                    # Backward compatibility: some models / setups may still emit <think>...</think>
+                    if delta:
+                        thinking_delta, answer_delta = _split_thinking_delta(delta, think_state)
+                    else:
+                        thinking_delta, answer_delta = '', ''
 
                     if thinking_delta:
                         think_text += thinking_delta
@@ -475,6 +491,10 @@ def promotion_stream(request):
                     if answer_delta:
                         full_text += answer_delta
                         yield helper_sse('delta', {'content': answer_delta})
+                    elif delta and not direct_thinking_delta:
+                        # If no tagged-think split happened, treat plain content as final answer
+                        full_text += delta
+                        yield helper_sse('delta', {'content': delta})
 
                     if data.get('done', True):
                         break
