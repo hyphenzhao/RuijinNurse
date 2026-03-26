@@ -330,6 +330,22 @@ def setup_view(request):
     knowledge_file_path = Path(base_path) / 'knowledge.txt'
     role_text, knowledge_text = load_role_and_knowledge(base_path)
 
+    runtime_session_files = []
+    if RUNTIME_SESSIONS_DIR.exists():
+        for path in sorted(RUNTIME_SESSIONS_DIR.glob('*.json')):
+            try:
+                runtime_session_files.append({
+                    'name': path.name,
+                    'updated_at': datetime.fromtimestamp(path.stat().st_mtime).isoformat(timespec='seconds'),
+                    'size_bytes': path.stat().st_size,
+                })
+            except Exception:
+                runtime_session_files.append({
+                    'name': path.name,
+                    'updated_at': 'unknown',
+                    'size_bytes': 0,
+                })
+
     agents = Agent.objects.all().order_by('-is_active', 'name')
     agent_form = AgentForm()
     knowledge_docs = KnowledgeDocument.objects.all().order_by('-created_at')
@@ -444,6 +460,12 @@ def setup_view(request):
         'knowledge_docs': knowledge_docs,
         'single_model_config': single_model_config,
         'upload_message': upload_message,
+        'debug_runtime_sessions_dir': str(RUNTIME_SESSIONS_DIR),
+        'debug_runtime_sessions_count': len(runtime_session_files),
+        'debug_runtime_sessions': runtime_session_files,
+        'debug_single_model_config_path': str(SINGLE_MODEL_CONFIG_PATH),
+        'debug_role_file_path': str(role_file_path),
+        'debug_knowledge_file_path': str(knowledge_file_path),
     })
 
 

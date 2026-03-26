@@ -272,6 +272,63 @@
             <a class="back-link" href="{% url 'promotion' %}">← 返回宣讲页面</a>
         </div>
 
+        <div class="section" style="padding:14px 18px;">
+            <details>
+                <summary style="cursor:pointer; font-weight:600;">调试面板</summary>
+                <div style="margin-top:12px;">
+                    <p class="hint" style="margin-top:0;">默认折叠，仅用于查看当前运行态与会话记忆文件。</p>
+                    <table>
+                        <tbody>
+                            <tr>
+                                <th style="width:220px;">会话 JSON 目录</th>
+                                <td>{{ debug_runtime_sessions_dir }}</td>
+                            </tr>
+                            <tr>
+                                <th>会话 JSON 数量</th>
+                                <td>{{ debug_runtime_sessions_count }}</td>
+                            </tr>
+                            <tr>
+                                <th>单模型配置文件</th>
+                                <td>{{ debug_single_model_config_path }}</td>
+                            </tr>
+                            <tr>
+                                <th>角色上下文文件</th>
+                                <td>{{ debug_role_file_path }}</td>
+                            </tr>
+                            <tr>
+                                <th>参考知识文件</th>
+                                <td>{{ debug_knowledge_file_path }}</td>
+                            </tr>
+                        </tbody>
+                    </table>
+
+                    <h3 style="margin-top:16px;">当前会话 JSON 文件</h3>
+                    {% if debug_runtime_sessions %}
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>文件名</th>
+                                <th>更新时间</th>
+                                <th>大小（bytes）</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for item in debug_runtime_sessions %}
+                            <tr>
+                                <td>{{ item.name }}</td>
+                                <td>{{ item.updated_at }}</td>
+                                <td>{{ item.size_bytes }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                    {% else %}
+                    <p class="hint">当前没有会话 JSON 文件。</p>
+                    {% endif %}
+                </div>
+            </details>
+        </div>
+
         <div class="section">
             <div class="section-header">
                 <div>
