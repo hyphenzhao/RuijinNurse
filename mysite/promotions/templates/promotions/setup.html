@@ -267,7 +267,7 @@
         <div class="page-header">
             <div>
                 <h1>系统管理</h1>
-                <p class="hint">管理本地知识文档与 Ollama 智能体配置。</p>
+                <p class="hint">管理 Ollama 智能体配置、系统上下文与参考知识。</p>
             </div>
             <a class="back-link" href="{% url 'promotion' %}">← 返回宣讲页面</a>
         </div>
@@ -447,7 +447,7 @@
             <div class="modal-header">
                 <div>
                     <h2 id="agentModalTitle">新建 Ollama 智能体</h2>
-                    <p class="hint">填写名称、slug、模型名，以及该智能体的系统提示词和知识背景。</p>
+                    <p class="hint">填写名称、slug、模型名，以及该智能体的角色上下文与参考知识。运行时会把两者合并为系统上下文，并结合会话记忆发送给 Ollama。</p>
                 </div>
                 <button type="button" id="closeAgentModalBtn" class="modal-close" aria-label="关闭">×</button>
             </div>
@@ -501,13 +501,15 @@
                 </p>
 
                 <p>
-                    <label for="create_system_prompt">角色设定（system prompt）</label>
+                    <label for="create_system_prompt">角色上下文（system context）</label>
                     <textarea id="create_system_prompt" name="system_prompt" disabled></textarea>
+                    <span class="hint">用于定义智能体身份、风格、规则和任务边界。</span>
                 </p>
 
                 <p>
-                    <label for="create_knowledge">背景知识</label>
+                    <label for="create_knowledge">参考知识（并入系统上下文）</label>
                     <textarea id="create_knowledge" name="knowledge" disabled></textarea>
+                    <span class="hint">运行时会与角色上下文合并后一起发送给 Ollama；不是独立的会话记忆。</span>
                 </p>
 
                 <p>
@@ -530,7 +532,7 @@
             <div class="modal-header">
                 <div>
                     <h2 id="editAgentModalTitle">编辑智能体</h2>
-                    <p class="hint">修改当前智能体的名称、slug、模型和提示词配置。</p>
+                    <p class="hint">修改当前智能体的名称、slug、模型、角色上下文和参考知识配置。</p>
                 </div>
                 <button type="button" id="closeEditAgentModalBtn" class="modal-close" aria-label="关闭">×</button>
             </div>
@@ -569,13 +571,15 @@
                 </p>
 
                 <p>
-                    <label for="edit_system_prompt">角色设定（system prompt）</label>
+                    <label for="edit_system_prompt">角色上下文（system context）</label>
                     <textarea id="edit_system_prompt" name="system_prompt" disabled></textarea>
+                    <span class="hint">用于定义智能体身份、风格、规则和任务边界。</span>
                 </p>
 
                 <p>
-                    <label for="edit_knowledge">背景知识</label>
+                    <label for="edit_knowledge">参考知识（并入系统上下文）</label>
                     <textarea id="edit_knowledge" name="knowledge" disabled></textarea>
+                    <span class="hint">运行时会与角色上下文合并后一起发送给 Ollama；不是独立的会话记忆。</span>
                 </p>
 
                 <p>

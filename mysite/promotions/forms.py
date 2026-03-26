@@ -22,8 +22,8 @@ class AgentForm(forms.ModelForm):
             'ollama_host': 'Ollama IP / 主机名',
             'ollama_port': 'Ollama 端口',
             'ollama_model': 'Ollama 模型名',
-            'system_prompt': '角色设定（system prompt）',
-            'knowledge': '背景知识',
+            'system_prompt': '角色上下文（system context）',
+            'knowledge': '参考知识（并入系统上下文）',
             'is_active': '是否启用',
         }
 
