@@ -116,6 +116,12 @@
         }
         .gate-title { font-weight: 600; margin-bottom: .75rem; }
 
+        .debug-panel{margin-top:1rem;background:#fff;border-radius:.5rem;box-shadow:0 0.125rem 0.25rem rgba(0,0,0,.075);padding:.85rem 1rem;}
+        .debug-panel summary{cursor:pointer;font-weight:600;color:#495057;}
+        .debug-grid{display:grid;grid-template-columns:180px 1fr;gap:.5rem .75rem;margin-top:.75rem;font-size:.95rem;}
+        .debug-grid .label{color:#6c757d;font-weight:600;}
+        .debug-grid .value{word-break:break-all;color:#212529;}
+
         @media (max-width: 991.98px){
             .app-layout{flex-direction:column;}
             .panel-left,.panel-center,.panel-right{flex-basis:auto!important;max-width:100%!important;}
@@ -412,6 +418,31 @@
 
         </form>
     </div>
+
+    <div class="debug-panel">
+        <details>
+            <summary>调试面板</summary>
+            <div class="debug-grid">
+                <div class="label">当前会话 Key</div>
+                <div class="value" id="debugSessionKey">{{ debug_session_key }}</div>
+
+                <div class="label">会话 JSON 目录</div>
+                <div class="value" id="debugRuntimeDir">{{ debug_runtime_sessions_dir }}</div>
+
+                <div class="label">当前选择目标</div>
+                <div class="value" id="debugCurrentTarget">未选择</div>
+
+                <div class="label">会话 JSON 文件</div>
+                <div class="value" id="debugSessionPath">未生成</div>
+
+                <div class="label">记忆策略</div>
+                <div class="value">同一页面会话内保留；刷新页面后清空</div>
+
+                <div class="label">显示思考过程</div>
+                <div class="value" id="debugThinkingMode">开启</div>
+            </div>
+        </details>
+    </div>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.5.2/dist/umd/popper.min.js"></script>
@@ -682,6 +713,11 @@
         const singleModelSelect = document.getElementById('singleModelSelect');
         const modeAgent = document.getElementById('modeAgent');
         const modeSingleModel = document.getElementById('modeSingleModel');
+        const debugCurrentTarget = document.getElementById('debugCurrentTarget');
+        const debugSessionPath = document.getElementById('debugSessionPath');
+        const debugThinkingMode = document.getElementById('debugThinkingMode');
+        const debugRuntimeDir = document.getElementById('debugRuntimeDir');
+        const showThinkingToggle = document.getElementById('showThinkingToggle');
 
         function ensureDefaultSelection() {
             if (modeAgent.checked && agentSelect.options.length > 0 && !agentSelect.value) {
@@ -689,6 +725,25 @@
             }
             if (modeSingleModel.checked && singleModelSelect.options.length > 0 && !singleModelSelect.value) {
                 singleModelSelect.selectedIndex = 0;
+            }
+        }
+
+        function sanitizeSessionTargetKey(value) {
+            return (value || 'default').replace(/[^A-Za-z0-9._-]+/g, '_');
+        }
+
+        function updateDebugPanel() {
+            const selectedTarget = hiddenModelSelect.value || '';
+            if (debugCurrentTarget) {
+                debugCurrentTarget.textContent = selectedTarget || '未选择';
+            }
+            if (debugSessionPath && debugRuntimeDir) {
+                debugSessionPath.textContent = selectedTarget
+                    ? `${debugRuntimeDir.textContent}\\{{ debug_session_key }}__${sanitizeSessionTargetKey(selectedTarget)}.json`
+                    : '未生成';
+            }
+            if (debugThinkingMode && showThinkingToggle) {
+                debugThinkingMode.textContent = showThinkingToggle.checked ? '开启' : '关闭';
             }
         }
 
@@ -706,12 +761,16 @@
             } else {
                 hiddenModelSelect.value = '';
             }
+            updateDebugPanel();
         }
 
         modeAgent.addEventListener('change', syncSelectionState);
         modeSingleModel.addEventListener('change', syncSelectionState);
         agentSelect.addEventListener('change', syncSelectionState);
         singleModelSelect.addEventListener('change', syncSelectionState);
+        if (showThinkingToggle) {
+            showThinkingToggle.addEventListener('change', updateDebugPanel);
+        }
 
         if (agentSelect.options.length > 0) {
             modeAgent.checked = true;
