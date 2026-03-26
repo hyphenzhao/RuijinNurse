@@ -144,3 +144,9 @@ yarn-error.log*
 
 # Jupyter / IPython
 .ipynb_checkpoints/
+
+########################
+# RUNTIME SESSION STATE
+########################
+mysite/promotions/runtime_sessions/*
+!mysite/promotions/runtime_sessions/.gitkeep
