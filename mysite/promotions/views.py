@@ -10,7 +10,6 @@ from .forms import AgentForm, PromotionForm
 from .models import Agent, KnowledgeDocument
 from .view_helper import (
     extract_text_from_upload,
-    helper_filter_think_stream,
     helper_sse,
     load_role_and_knowledge,
 )
@@ -147,6 +146,44 @@ def _append_chat_history(request, promotion: str, response_text: str):
     chat_history.append({'user': promotion, 'response': response_text})
     request.session['chat_history'] = chat_history
     return chat_history
+
+
+def _split_thinking_delta(delta: str, state: dict):
+    """
+    Split one streamed Ollama delta into visible thinking content and final answer content.
+    state = {'in_think': bool}
+    Returns: (thinking_text, answer_text)
+    """
+    if not delta:
+        return '', ''
+
+    thinking_parts = []
+    answer_parts = []
+    buf = delta
+
+    while buf:
+        if state['in_think']:
+            end = buf.find('</think>')
+            if end == -1:
+                thinking_parts.append(buf)
+                buf = ''
+            else:
+                thinking_parts.append(buf[:end])
+                buf = buf[end + len('</think>'):]
+                state['in_think'] = False
+            continue
+
+        start = buf.find('<think>')
+        if start == -1:
+            answer_parts.append(buf)
+            buf = ''
+        else:
+            if start > 0:
+                answer_parts.append(buf[:start])
+            buf = buf[start + len('<think>'):]
+            state['in_think'] = True
+
+    return ''.join(thinking_parts), ''.join(answer_parts)
 
 
 def _save_latest_response_text(response_text: str):
@@ -404,6 +441,7 @@ def promotion_stream(request):
         yield helper_sse('status', {'message': 'thinking'})
 
         full_text = ''
+        think_text = ''
         think_state = {'in_think': False}
 
         try:
@@ -428,15 +466,18 @@ def promotion_stream(request):
                         continue
 
                     delta = data.get('message', {}).get('content', '')
-                    safe_delta = helper_filter_think_stream(delta, think_state)
-                    if safe_delta:
-                        full_text += safe_delta
-                        yield helper_sse('delta', {'content': safe_delta})
+                    thinking_delta, answer_delta = _split_thinking_delta(delta, think_state)
+
+                    if thinking_delta:
+                        think_text += thinking_delta
+                        yield helper_sse('thinking', {'content': thinking_delta})
+
+                    if answer_delta:
+                        full_text += answer_delta
+                        yield helper_sse('delta', {'content': answer_delta})
+
                     if data.get('done', True):
                         break
-
-            if '</think>' in full_text:
-                full_text = full_text.split('</think>')[-1]
 
         except Exception as e:
             err = f'（服务端错误）{type(e).__name__}: {e}'
@@ -444,7 +485,7 @@ def promotion_stream(request):
             full_text = (full_text or '') + '\n' + err
 
         _append_chat_history(request, promotion, full_text)
-        yield helper_sse('done', {'final': full_text, 'audio_url': None})
+        yield helper_sse('done', {'final': full_text, 'thinking': think_text, 'audio_url': None})
 
     response = StreamingHttpResponse(generate(), content_type='text/event-stream')
     response['Cache-Control'] = 'no-cache'

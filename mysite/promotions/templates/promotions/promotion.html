@@ -33,10 +33,10 @@
         .message{display:flex;margin-bottom:.5rem;}
         .message.user{justify-content:flex-end;}
         .message.ai{justify-content:flex-start;}
-        .bubble{max-width:78%;padding:.5rem .75rem;border-radius:1rem;box-shadow:0 1px 2px rgba(0,0,0,.05);word-wrap:break-word;white-space:pre-wrap;line-height:1.45;}
+        .bubble{max-width:78%;padding:.5rem .75rem;border-radius:1rem;box-shadow:0 1px 2px rgba(0,0,0,.05);word-wrap:break-word;white-space:pre-wrap;line-height:1.45;font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", sans-serif;}
         .message.user .bubble{background:#dceeff;border-top-right-radius:.25rem;}
         .message.ai .bubble{background:#f8f9fa;border-top-left-radius:.25rem;}
-        .bubble .thinking{color:#6c757d;margin-bottom:.25rem;font-size:.95rem;display:flex;align-items:center;gap:.25rem;}
+        .bubble .thinking{color:#6c757d;margin-bottom:.25rem;font-size:.85rem;display:flex;align-items:center;gap:.25rem;opacity:0.85;}
         .bubble .answer{color:#212529;}
         .bubble .answer .markdown-body{line-height:1.5;}
         .bubble .answer .markdown-body p{margin:0 0 .35rem;}
@@ -290,7 +290,7 @@
     <div id="appLayout"
      class="app-layout mt-3"
      data-show-intro="{{ show_intro|yesno:'1,0' }}"
-     data-intro-src="{% static 'promotions/inpatient.mp4' %}"
+     data-intro-src="{% static 'promotions/hospital_notification.mp4' %}"
      data-intro-welcome="欢迎来到瑞金医院功能神外智能宣讲。请先观看入院介绍视频，如有问题可在右侧输入提问。">
 
         <!-- Left: Unity WebGL (replaces the video) -->
@@ -399,6 +399,10 @@
                                     <option value="">暂无可用单模型</option>
                                 {% endfor %}
                             </select>
+                        </div>
+                        <div class="form-check mb-2">
+                            <input class="form-check-input" type="checkbox" value="1" id="showThinkingToggle" checked>
+                            <label class="form-check-label small" for="showThinkingToggle">显示思考过程（渐进输出）</label>
                         </div>
                         <div class="text-muted small mb-2">（预留扩展区域）</div>
                         <a href="{% url 'setup' %}" class="btn btn-outline-secondary btn-sm w-100">系统管理</a>
@@ -658,11 +662,19 @@
         };
     }
 
-    // Main submit handler (STREAMING)
+    // Main submit handler (STREAMING) — separate thinking bubble + expandable option, then streaming answer
     (function(){
         const form = document.getElementById('promotion-form');
         const messages = document.getElementById('chat-messages');
         const textarea = document.getElementById('promotionText');
+        // Enter = submit, Shift+Enter = newline
+        textarea.addEventListener('keydown', function(e){
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                // trigger form submit
+                submitBtn.click();
+            }
+        });
         const submitBtn = document.getElementById('submit-button');
         const ttsAudio = document.getElementById('tts-audio');
         const hiddenModelSelect = document.getElementById('modelSelect');
@@ -728,12 +740,58 @@
             const userBubble = makeBubble('user', '<strong>问题：</strong> ' + $('<div/>').text(text).html());
             messages.appendChild(userBubble);
 
-            // 2) create AI bubble with thinking + empty answer
-            const ai = makeAIBubble();
-            messages.appendChild(ai.msg);
-            ai._full = '';               // collect the whole streamed text
-            ai._embedded = new Set();    // avoid duplicate video bubbles if any
-            messages.scrollTop = messages.scrollHeight;
+            // 2) optionally show a separate thinking bubble (small/grey) that is expandable
+            const showThinking = (document.getElementById('showThinkingToggle')?.checked !== false);
+            let thinkingMsg = null;
+            let answerMsgEarly = null;
+            let answerBodyEarly = null;
+
+            if (showThinking) {
+                const thinkingHtml = '<div class="thinking">正在思考 <span class="dots"><span class="dot"></span><span class="dot"></span><span class="dot"></span></span></div>' +
+                                     '<div class="thinking-content" style="display:block;white-space:pre-wrap;margin-top:6px;font-size:.9rem;color:#6c757d;max-height:4.5rem;overflow:hidden;">';
+                thinkingMsg = makeBubble('ai', thinkingHtml + '</div>');
+                // add a small expand/collapse control
+                const expandBtn = document.createElement('button');
+                expandBtn.type = 'button';
+                expandBtn.className = 'btn btn-sm btn-link';
+                expandBtn.style.padding = '0 0 0 .5rem';
+                expandBtn.textContent = '展开';
+                let expanded = false;
+
+                // attach expand behavior
+                expandBtn.addEventListener('click', ()=>{
+                    const cont = thinkingMsg.querySelector('.thinking-content');
+                    if (!cont) return;
+                    expanded = !expanded;
+                    if (expanded) {
+                        cont.style.maxHeight = 'none';
+                        cont.style.overflow = 'auto';
+                        expandBtn.textContent = '收起';
+                    } else {
+                        cont.style.maxHeight = '4.5rem';
+                        cont.style.overflow = 'hidden';
+                        expandBtn.textContent = '展开';
+                    }
+                    cont.scrollTop = cont.scrollHeight;
+                });
+
+                // place the expand button inside the bubble (top-right)
+                const thinkingBubbleDiv = thinkingMsg.querySelector('.bubble');
+                thinkingBubbleDiv.style.position = 'relative';
+                expandBtn.style.position = 'absolute';
+                expandBtn.style.right = '8px';
+                expandBtn.style.top = '6px';
+                thinkingBubbleDiv.appendChild(expandBtn);
+
+                messages.appendChild(thinkingMsg);
+                messages.scrollTop = messages.scrollHeight;
+            } else {
+                // If thinking is disabled, create the answer bubble immediately and stream deltas into it
+                answerMsgEarly = makeBubble('ai', '<div class="answer"><strong>答复：</strong><div class="markdown-body mt-2" style="white-space:pre-wrap"></div></div>');
+                messages.appendChild(answerMsgEarly);
+                answerBodyEarly = answerMsgEarly.querySelector('.markdown-body');
+                messages.scrollTop = messages.scrollHeight;
+            }
 
             // 3) disable UI while streaming
             submitBtn.disabled = true;
@@ -741,34 +799,73 @@
             submitBtn.classList.remove('btn-primary');
             submitBtn.classList.add('btn-secondary');
 
+            // buffer for full answer
+            let fullBuffer = '';
+
             try {
                 const streamer = await streamReply(form);
                 for await (const { ev, data } of streamer.iterEvents()) {
                     if (ev === 'status') {
-                        // already visible "thinking…" line; nothing else to do
+                        // status events can be ignored
+                    } else if (ev === 'thinking') {
+                        const content = data.content || '';
+                        if (showThinking && thinkingMsg) {
+                            const cont = thinkingMsg.querySelector('.thinking-content');
+                            if (cont) {
+                                appendText(cont, content);
+                                cont.scrollTop = cont.scrollHeight;
+                            }
+                        }
+                        messages.scrollTop = messages.scrollHeight;
                     } else if (ev === 'delta') {
-                        // hide thinking after first token
-                        if (ai.thinking) ai.thinking.style.display = 'none';
-                        ai._full += (data.content || '');                 // <-- add this
-                        appendText(ai.answer, data.content || '');
+                        // append final-answer tokens to answer stream
+                        const content = data.content || '';
+                        fullBuffer += content;
+
+                        if (answerBodyEarly) {
+                            appendText(answerBodyEarly, content);
+                            answerBodyEarly.scrollTop = answerBodyEarly.scrollHeight;
+                        }
+
                         messages.scrollTop = messages.scrollHeight;
                     } else if (ev === 'done') {
-                        // 1) TTS as before
+                        // done: optional audio
                         if (data.audio_url) {
                             ttsAudio.setAttribute('src', data.audio_url);
                             const p = ttsAudio.play(); if (p) p.catch(()=>{});
                         }
 
-                        // 2) Re-render the final answer as Markdown and embed videos inline
-                        const full = ai._full || '';
-                        renderAnswerContent(ai.answer, full);
+                        // hide the thinking bubble (but keep it in DOM for expand if user wants)
+                        const thinkingCont = thinkingMsg.querySelector('.thinking');
+                        if (thinkingCont) thinkingCont.style.display = 'none';
+
+                        // create the final answer bubble and stream the buffered content into it (simulate streaming)
+                        const answerMsg = makeBubble('ai', '<div class="answer"><strong>答复：</strong><div class="markdown-body mt-2" style="white-space:pre-wrap"></div></div>');
+                        messages.appendChild(answerMsg);
+                        const answerBody = answerMsg.querySelector('.markdown-body');
+
+                        // progressive replay: split buffer into reasonable chunks
+                        const CHUNK_SIZE = 32; // characters per chunk for streaming effect
+                        let idx = 0;
+                        while (idx < fullBuffer.length) {
+                            const chunk = fullBuffer.slice(idx, idx + CHUNK_SIZE);
+                            appendText(answerBody, chunk);
+                            idx += CHUNK_SIZE;
+                            messages.scrollTop = messages.scrollHeight;
+                            // small delay to create streaming feel
+                            await new Promise(r => setTimeout(r, 40));
+                        }
+
+                        // final render: replace with sanitized markdown + embedded media
+                        const final = fullBuffer || '';
+                        renderAnswerContent(answerBody.parentElement, final);
                         messages.scrollTop = messages.scrollHeight;
                     }
                 }
             } catch (err) {
-                // show a simple inline error
-                if (ai.thinking) ai.thinking.style.display = 'none';
-                appendText(ai.answer, '\n（发生错误）' + err.message);
+                // show a simple inline error in a visible answer bubble
+                const errorMsg = makeBubble('ai', '<div class="answer"><strong>答复：</strong><div class="markdown-body mt-2">（发生错误）' + escapeHtml(err.message) + '</div></div>');
+                messages.appendChild(errorMsg);
             } finally {
                 // 4) re-enable UI
                 submitBtn.disabled = false;
