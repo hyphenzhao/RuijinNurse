@@ -456,6 +456,22 @@
                 {% csrf_token %}
                 <input type="hidden" name="form_type" value="agent">
 
+                <div style="padding:12px; margin-bottom:14px; border:1px dashed var(--border); border-radius:10px; background:#f8fafc;">
+                    <label for="create_template_agent"><strong>从现有智能体复制</strong></label>
+                    <div class="button-row" style="align-items:flex-end; margin-top:8px;">
+                        <p style="flex:1; margin:0;">
+                            <select id="create_template_agent">
+                                <option value="">不使用模板（从空白创建）</option>
+                                {% for a in agents %}
+                                <option value="{{ a.id }}">{{ a.name }}（{{ a.slug }}）</option>
+                                {% endfor %}
+                            </select>
+                        </p>
+                        <button class="btn btn-secondary" type="button" id="applyTemplateBtn">加载模板</button>
+                    </div>
+                    <p class="hint">会复制主机、端口、模型、system prompt 和知识内容。为避免冲突，名称和 slug 不会自动复制。</p>
+                </div>
+
                 <p>
                     <label for="create_name">智能体名称</label>
                     <input type="text" id="create_name" name="name" required>
@@ -601,6 +617,8 @@
             };
 
             const createState = {
+                name: document.getElementById('create_name'),
+                slug: document.getElementById('create_slug'),
                 host: document.getElementById('create_ollama_host'),
                 port: document.getElementById('create_ollama_port'),
                 model: document.getElementById('create_ollama_model'),
@@ -610,6 +628,8 @@
                 saveBtn: document.getElementById('saveCreateAgentBtn'),
                 fetchBtn: document.getElementById('fetchCreateModelsBtn'),
                 status: document.getElementById('createModelFetchStatus'),
+                templateSelect: document.getElementById('create_template_agent'),
+                applyTemplateBtn: document.getElementById('applyTemplateBtn'),
             };
 
             const editState = {
@@ -764,14 +784,61 @@
             }
 
             function resetCreateModal() {
+                createState.name.value = '';
+                createState.slug.value = '';
                 createState.host.value = '127.0.0.1';
                 createState.port.value = '11434';
                 createState.systemPrompt.value = '';
                 createState.knowledge.value = '';
                 createState.isActive.checked = true;
                 createState.status.textContent = '请先填写 Ollama 地址并点击“获取模型”。';
+                if (createState.templateSelect) createState.templateSelect.value = '';
                 clearModelOptions(createState.model);
                 setEditableState(createState, false);
+            }
+
+            function getAgentTemplateMap() {
+                const map = {};
+                editButtons.forEach(function (btn) {
+                    map[btn.dataset.agentId] = {
+                        id: btn.dataset.agentId || '',
+                        name: btn.dataset.agentName || '',
+                        slug: btn.dataset.agentSlug || '',
+                        host: btn.dataset.agentHost || '',
+                        port: btn.dataset.agentPort || '',
+                        model: btn.dataset.agentModel || '',
+                        systemPrompt: btn.dataset.agentSystemPrompt || '',
+                        knowledge: btn.dataset.agentKnowledge || '',
+                        isActive: btn.dataset.agentActive === 'true',
+                    };
+                });
+                return map;
+            }
+
+            const agentTemplateMap = getAgentTemplateMap();
+
+            async function applyCreateTemplate() {
+                const templateId = createState.templateSelect ? createState.templateSelect.value : '';
+                if (!templateId) {
+                    resetCreateModal();
+                    return;
+                }
+
+                const template = agentTemplateMap[templateId];
+                if (!template) {
+                    createState.status.textContent = '未找到所选模板智能体。';
+                    return;
+                }
+
+                createState.name.value = '';
+                createState.slug.value = '';
+                createState.host.value = template.host || '127.0.0.1';
+                createState.port.value = template.port || '11434';
+                createState.systemPrompt.value = template.systemPrompt || '';
+                createState.knowledge.value = template.knowledge || '';
+                createState.isActive.checked = template.isActive;
+                createState.status.textContent = `已加载模板：${template.name}。正在同步该模板对应的模型列表...`;
+                await fetchModels(createState, template.model || '');
             }
 
             setEditableState(singleState, false);
@@ -805,6 +872,12 @@
             createState.fetchBtn.addEventListener('click', function () {
                 fetchModels(createState, null);
             });
+
+            if (createState.applyTemplateBtn) {
+                createState.applyTemplateBtn.addEventListener('click', function () {
+                    applyCreateTemplate();
+                });
+            }
 
             editState.fetchBtn.addEventListener('click', function () {
                 fetchModels(editState, editState.model.dataset.currentValue || '');
