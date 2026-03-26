@@ -1,5 +1,7 @@
 from pathlib import Path
 import json
+import re
+from datetime import datetime
 
 import requests
 from django.http import JsonResponse, StreamingHttpResponse
@@ -16,6 +18,7 @@ from .view_helper import (
 
 
 PROMOTIONS_STATIC_DIR = Path(__file__).resolve().parent / 'static' / 'promotions'
+RUNTIME_SESSIONS_DIR = Path(__file__).resolve().parent / 'runtime_sessions'
 SINGLE_MODEL_CONFIG_PATH = PROMOTIONS_STATIC_DIR / 'single_model_config.json'
 OLLAMA_CHAT_URL = 'http://localhost:11434/api/chat'
 LOCAL_MODEL_MAP = {
@@ -30,12 +33,25 @@ def _get_base_path() -> str:
     return str(PROMOTIONS_STATIC_DIR)
 
 
-def _build_messages(role_text: str, knowledge_text: str, promotion: str):
-    return [
-        {'role': 'system', 'content': role_text},
-        {'role': 'system', 'content': knowledge_text},
-        {'role': 'user', 'content': f'你现在的角色是{role_text}，现在回答问题：{promotion}'},
-    ]
+def _build_system_context(role_text: str, knowledge_text: str) -> str:
+    role_text = (role_text or '').strip()
+    knowledge_text = (knowledge_text or '').strip()
+    parts = []
+    if role_text:
+        parts.append(f'[角色设定]\n{role_text}')
+    if knowledge_text:
+        parts.append(f'[参考知识]\n{knowledge_text}')
+    return '\n\n'.join(parts).strip()
+
+
+def _build_messages(system_context: str, history_messages, promotion: str):
+    messages = []
+    if system_context:
+        messages.append({'role': 'system', 'content': system_context})
+    if history_messages:
+        messages.extend(history_messages)
+    messages.append({'role': 'user', 'content': promotion})
+    return messages
 
 
 def _resolve_local_model(model_key: str) -> str:
@@ -58,10 +74,10 @@ def _fetch_ollama_models(host: str, port):
     return [model.get('name') for model in payload.get('models', []) if model.get('name')]
 
 
-def _stream_ollama_response_by_target(base_url: str, model_name: str, role_text: str, knowledge_text: str, promotion: str):
+def _stream_ollama_response_by_target(base_url: str, model_name: str, messages):
     payload = {
         'model': model_name,
-        'messages': _build_messages(role_text, knowledge_text, promotion),
+        'messages': messages,
         'think': True,
         'stream': True,
     }
@@ -69,12 +85,11 @@ def _stream_ollama_response_by_target(base_url: str, model_name: str, role_text:
 
 
 def _stream_ollama_response(model_key: str, role_text: str, knowledge_text: str, promotion: str):
+    system_context = _build_system_context(role_text, knowledge_text)
     return _stream_ollama_response_by_target(
         _build_ollama_base_url('127.0.0.1', '11434'),
         _resolve_local_model(model_key),
-        role_text,
-        knowledge_text,
-        promotion,
+        _build_messages(system_context, [], promotion),
     )
 
 
@@ -216,6 +231,82 @@ def _save_single_model_config(host: str, port):
         json.dumps(payload, ensure_ascii=False, indent=2),
         encoding='utf-8',
     )
+
+
+def _ensure_request_session_key(request) -> str:
+    if not request.session.session_key:
+        request.session.save()
+    return request.session.session_key
+
+
+def _safe_model_key(model_key: str) -> str:
+    return re.sub(r'[^A-Za-z0-9._-]+', '_', model_key or 'default')
+
+
+def _get_session_context_path(request, model_key: str) -> Path:
+    session_key = _ensure_request_session_key(request)
+    RUNTIME_SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
+    return RUNTIME_SESSIONS_DIR / f'{session_key}__{_safe_model_key(model_key)}.json'
+
+
+def _load_session_context(path: Path, system_context: str, model_key: str):
+    if path.exists():
+        try:
+            data = json.loads(path.read_text(encoding='utf-8'))
+            if isinstance(data, dict):
+                data.setdefault('version', 1)
+                data.setdefault('model_key', model_key)
+                data.setdefault('system_context', system_context)
+                data.setdefault('messages', [])
+                return data
+        except Exception:
+            pass
+    return {
+        'version': 1,
+        'model_key': model_key,
+        'system_context': system_context,
+        'messages': [],
+        'updated_at': None,
+    }
+
+
+def _save_session_context(path: Path, data: dict):
+    data['updated_at'] = datetime.now().isoformat()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding='utf-8')
+
+
+def _append_session_message(data: dict, role: str, content: str):
+    content = (content or '').strip()
+    if not content:
+        return
+    data.setdefault('messages', [])
+    data['messages'].append({
+        'role': role,
+        'content': content,
+        'timestamp': datetime.now().isoformat(),
+    })
+
+
+def _history_messages_for_ollama(data: dict):
+    out = []
+    for item in data.get('messages', []):
+        role = item.get('role')
+        content = item.get('content')
+        if role in {'user', 'assistant'} and content:
+            out.append({'role': role, 'content': content})
+    return out
+
+
+def _clear_request_session_contexts(request):
+    session_key = _ensure_request_session_key(request)
+    if not RUNTIME_SESSIONS_DIR.exists():
+        return
+    for path in RUNTIME_SESSIONS_DIR.glob(f'{session_key}__*.json'):
+        try:
+            path.unlink()
+        except Exception:
+            pass
 
 
 def ollama_models_view(request):
@@ -379,13 +470,16 @@ def promotion_view(request):
             chat_target = _get_chat_target(model)
             role_text = chat_target['role_text'] if chat_target['role_text'] is not None else default_role_text
             knowledge_text = chat_target['knowledge_text'] if chat_target['knowledge_text'] is not None else default_knowledge_text
+            system_context = _build_system_context(role_text, knowledge_text)
+            session_path = _get_session_context_path(request, model)
+            session_data = _load_session_context(session_path, system_context, model)
+            session_data['system_context'] = system_context
+
             response_text = ''
             with _stream_ollama_response_by_target(
                 chat_target['base_url'],
                 chat_target['model_name'],
-                role_text,
-                knowledge_text,
-                promotion,
+                _build_messages(system_context, _history_messages_for_ollama(session_data), promotion),
             ) as response:
                 response.raise_for_status()
                 for line in response.iter_lines(decode_unicode=True):
@@ -395,13 +489,19 @@ def promotion_view(request):
                         data = json.loads(line)
                     except json.JSONDecodeError:
                         continue
-                    response_text += data.get('message', {}).get('content', '')
+                    message = data.get('message', {}) or {}
+                    response_text += message.get('content', '')
                     if data.get('done', True):
                         break
-            if '</think>' in response_text:
-                response_text = response_text.split('</think>')[-1]
         except Exception as e:
             response_text = f'（服务端错误）{type(e).__name__}: {e}'
+            session_data = None
+            session_path = None
+
+        if session_data is not None and session_path is not None:
+            _append_session_message(session_data, 'user', promotion)
+            _append_session_message(session_data, 'assistant', response_text)
+            _save_session_context(session_path, session_data)
 
         chat_history = _append_chat_history(request, promotion, response_text)
         _save_latest_response_text(response_text)
@@ -413,6 +513,7 @@ def promotion_view(request):
     form = PromotionForm(agent_choices=agents, model_choices=model_choices)
     if 'chat_history' in request.session:
         del request.session['chat_history']
+    _clear_request_session_contexts(request)
 
     return render(request, 'promotions/promotion.html', {
         'form': form,
@@ -445,18 +546,22 @@ def promotion_stream(request):
         full_text = ''
         think_text = ''
         think_state = {'in_think': False}
+        session_path = None
+        session_data = None
 
         try:
             chat_target = _get_chat_target(model)
             role_text = chat_target['role_text'] if chat_target['role_text'] is not None else default_role_text
             knowledge_text = chat_target['knowledge_text'] if chat_target['knowledge_text'] is not None else default_knowledge_text
+            system_context = _build_system_context(role_text, knowledge_text)
+            session_path = _get_session_context_path(request, model)
+            session_data = _load_session_context(session_path, system_context, model)
+            session_data['system_context'] = system_context
 
             with _stream_ollama_response_by_target(
                 chat_target['base_url'],
                 chat_target['model_name'],
-                role_text,
-                knowledge_text,
-                promotion,
+                _build_messages(system_context, _history_messages_for_ollama(session_data), promotion),
             ) as response:
                 response.raise_for_status()
                 for line in response.iter_lines(decode_unicode=True):
@@ -503,6 +608,11 @@ def promotion_stream(request):
             err = f'（服务端错误）{type(e).__name__}: {e}'
             yield helper_sse('delta', {'content': err})
             full_text = (full_text or '') + '\n' + err
+
+        if session_data is not None and session_path is not None:
+            _append_session_message(session_data, 'user', promotion)
+            _append_session_message(session_data, 'assistant', full_text)
+            _save_session_context(session_path, session_data)
 
         _append_chat_history(request, promotion, full_text)
         yield helper_sse('done', {'final': full_text, 'thinking': think_text, 'audio_url': None})
