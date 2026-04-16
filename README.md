@@ -176,6 +176,231 @@ cd RuijinNurse
    - 场景加载、UI 文本、语言等
 3. 进入对应场景，点击 **Play** 进行测试。
 
+### 4.4 配置中文语音输入 / 输出组件（`faster-whisper` + `Piper`）
+
+对于当前项目，推荐将语音能力单独部署为一个独立的语音服务，而不是直接耦合进 `Django` 主进程。
+
+推荐组合：
+
+- `faster-whisper`
+  - 用于语音识别（ASR, speech-to-text）
+  - 支持中文，适合离线部署
+- `Piper`
+  - 用于语音合成（TTS, text-to-speech）
+  - 开源、可离线部署，适合作为独立服务组件
+
+推荐部署方式：
+
+- 与 `Django` 部署在同一台机器
+- 部署在局域网内另一台边缘节点机器
+- 部署在医院内网服务器上，通过 HTTP API 提供服务
+
+建议语音服务至少提供以下接口：
+
+- `POST /asr`
+  - 输入音频文件
+  - 输出识别文本
+- `POST /tts`
+  - 输入文本
+  - 输出音频文件或音频流
+- `GET /health`
+  - 用于部署连通性检测
+
+#### 4.4.1 Ubuntu 部署示例
+
+1. 安装系统依赖：
+
+   ```bash
+   sudo apt update
+   sudo apt install -y python3 python3-venv python3-pip ffmpeg curl
+   ```
+
+2. 创建语音服务目录并进入：
+
+   ```bash
+   mkdir -p ~/ruijin_speech_service
+   cd ~/ruijin_speech_service
+   ```
+
+3. 创建虚拟环境并激活：
+
+   ```bash
+   python3 -m venv .venv
+   source .venv/bin/activate
+   ```
+
+4. 安装 `faster-whisper` 及基础服务依赖：
+
+   ```bash
+   pip install -U pip
+   pip install faster-whisper fastapi uvicorn python-multipart soundfile
+   ```
+
+5. 安装 `Piper`：
+
+   - 方式 A：使用系统包 / 预编译二进制（推荐）
+   - 方式 B：从 `Piper` 官方仓库下载对应 Linux 可执行文件
+
+   常见做法是下载：
+
+   - `piper` 可执行文件
+   - 中文语音模型文件，如：
+     - `zh_CN-huayan-medium.onnx`
+     - `zh_CN-huayan-medium.onnx.json`
+
+6. 准备目录结构：
+
+   ```text
+   ruijin_speech_service/
+   ├─ .venv/
+   ├─ app.py
+   ├─ piper/
+   │  ├─ piper
+   │  ├─ zh_CN-huayan-medium.onnx
+   │  └─ zh_CN-huayan-medium.onnx.json
+   └─ tmp/
+   ```
+
+7. 启动语音服务：
+
+   ```bash
+   uvicorn app:app --host 0.0.0.0 --port 8010
+   ```
+
+#### 4.4.2 Windows 11 部署示例
+
+1. 安装基础环境：
+
+   - 安装 `Python 3.10+`
+   - 安装 `ffmpeg`
+   - 建议安装 `Git`
+
+2. 创建语音服务目录：
+
+   ```powershell
+   mkdir C:\ruijin_speech_service
+   cd C:\ruijin_speech_service
+   ```
+
+3. 创建并激活虚拟环境：
+
+   ```powershell
+   python -m venv .venv
+   .venv\Scripts\activate
+   ```
+
+4. 安装 `faster-whisper` 及基础服务依赖：
+
+   ```powershell
+   pip install -U pip
+   pip install faster-whisper fastapi uvicorn python-multipart soundfile
+   ```
+
+5. 安装 `Piper`：
+
+   - 下载 Windows 版 `Piper` 可执行文件
+   - 下载中文语音模型，例如：
+     - `zh_CN-huayan-medium.onnx`
+     - `zh_CN-huayan-medium.onnx.json`
+
+6. 推荐目录结构：
+
+   ```text
+   C:\ruijin_speech_service
+   ├─ .venv\
+   ├─ app.py
+   ├─ piper\
+   │  ├─ piper.exe
+   │  ├─ zh_CN-huayan-medium.onnx
+   │  └─ zh_CN-huayan-medium.onnx.json
+   └─ tmp\
+   ```
+
+7. 启动语音服务：
+
+   ```powershell
+   uvicorn app:app --host 0.0.0.0 --port 8010
+   ```
+
+#### 4.4.3 macOS 部署示例
+
+1. 安装基础依赖：
+
+   ```bash
+   brew install python ffmpeg
+   ```
+
+2. 创建语音服务目录：
+
+   ```bash
+   mkdir -p ~/ruijin_speech_service
+   cd ~/ruijin_speech_service
+   ```
+
+3. 创建虚拟环境并激活：
+
+   ```bash
+   python3 -m venv .venv
+   source .venv/bin/activate
+   ```
+
+4. 安装 `faster-whisper` 及基础服务依赖：
+
+   ```bash
+   pip install -U pip
+   pip install faster-whisper fastapi uvicorn python-multipart soundfile
+   ```
+
+5. 安装 `Piper`：
+
+   - 下载 macOS 版本 `Piper` 可执行文件
+   - 下载中文语音模型，例如：
+     - `zh_CN-huayan-medium.onnx`
+     - `zh_CN-huayan-medium.onnx.json`
+
+6. 启动语音服务：
+
+   ```bash
+   uvicorn app:app --host 0.0.0.0 --port 8010
+   ```
+
+#### 4.4.4 中文支持说明
+
+`faster-whisper`：
+
+- 对普通话中文支持较好
+- 对中英混合场景通常也有较好表现
+- 更建议优先测试医疗术语、药名、科室名、人名和地名识别效果
+
+`Piper`：
+
+- 支持中文语音合成，但效果取决于具体中文声学模型
+- 不同中文模型在自然度、音色和停顿处理上差异较大
+- 建议优先固定一套经过实际测试的中文模型后再进入部署阶段
+
+#### 4.4.5 部署建议
+
+对于医疗科研和离线场景，建议：
+
+- 优先使用完全离线部署
+- 将语音服务与 `Django` 服务分离
+- 通过配置文件指定语音服务地址，例如：
+  - `SPEECH_SERVICE_URL=http://127.0.0.1:8010`
+- 优先保存文本日志，而不是默认长期保存原始音频
+- 在正式使用前，针对中文医疗术语进行专项测试
+
+#### 4.4.6 当前阶段建议
+
+在项目初期，建议先完成以下最小可用路径：
+
+1. 浏览器或 Unity 端录音
+2. 将音频发送到独立语音服务的 `/asr`
+3. 将识别文本送入当前 `Django + Ollama` 问答流程
+4. 将回答文本发送到 `/tts`
+5. 返回音频给前端播放
+
+这样可以在不破坏现有对话架构的前提下，逐步引入中文语音输入输出能力。
+
 ---
 
 ## 5️⃣ 仓库目录结构（当前）
