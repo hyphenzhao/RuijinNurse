@@ -20,6 +20,7 @@ from .view_helper import (
 PROMOTIONS_STATIC_DIR = Path(__file__).resolve().parent / 'static' / 'promotions'
 RUNTIME_SESSIONS_DIR = Path(__file__).resolve().parent / 'runtime_sessions'
 SINGLE_MODEL_CONFIG_PATH = PROMOTIONS_STATIC_DIR / 'single_model_config.json'
+README_PATH = Path(__file__).resolve().parents[2] / 'README.md'
 OLLAMA_CHAT_URL = 'http://localhost:11434/api/chat'
 LOCAL_MODEL_MAP = {
     'l-deepseek': 'deepseek-r1:32b',
@@ -322,6 +323,14 @@ def ollama_models_view(request):
         return JsonResponse({'ok': False, 'error': f'{type(e).__name__}: {e}', 'models': []}, status=502)
 
     return JsonResponse({'ok': True, 'models': models})
+
+
+def readme_help_view(request):
+    try:
+        content = README_PATH.read_text(encoding='utf-8')
+    except Exception as e:
+        return JsonResponse({'ok': False, 'error': f'{type(e).__name__}: {e}', 'content': ''}, status=500)
+    return JsonResponse({'ok': True, 'content': content})
 
 
 def setup_view(request):

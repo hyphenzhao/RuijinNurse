@@ -122,6 +122,18 @@
         .debug-grid .label{color:#6c757d;font-weight:600;}
         .debug-grid .value{word-break:break-all;color:#212529;}
 
+        .sidebar-actions{display:flex;gap:.5rem;}
+        .sidebar-actions .btn{flex:1 1 0;}
+        .help-modal-body{max-height:70vh;overflow:auto;}
+        .help-modal-body .markdown-body{line-height:1.6;word-break:break-word;}
+        .help-modal-body .markdown-body h1,
+        .help-modal-body .markdown-body h2,
+        .help-modal-body .markdown-body h3,
+        .help-modal-body .markdown-body h4{margin-top:1rem;margin-bottom:.6rem;}
+        .help-modal-body .markdown-body pre{background:#111827;color:#f9fafb;padding:.75rem;border-radius:.5rem;overflow:auto;}
+        .help-modal-body .markdown-body code{background:transparent;padding:0;border-radius:0;font-size:.9em;}
+        .help-modal-body .markdown-body pre code{background:transparent;padding:0;border-radius:0;color:inherit;}
+
         @media (max-width: 991.98px){
             .app-layout{flex-direction:column;}
             .panel-left,.panel-center,.panel-right{flex-basis:auto!important;max-width:100%!important;}
@@ -411,7 +423,10 @@
                             <label class="form-check-label small" for="showThinkingToggle">显示思考过程（渐进输出）</label>
                         </div>
                         <div class="text-muted small mb-2">（预留扩展区域）</div>
-                        <a href="{% url 'setup' %}" class="btn btn-outline-secondary btn-sm w-100">系统管理</a>
+                        <div class="sidebar-actions">
+                            <a href="{% url 'setup' %}" class="btn btn-outline-secondary btn-sm">系统管理</a>
+                            <button type="button" id="helpButton" class="btn btn-outline-secondary btn-sm">帮助</button>
+                        </div>
                     </div>
                 </div>
             </aside>
@@ -443,6 +458,20 @@
             </div>
         </details>
     </div>
+</div>
+
+<div class="modal fade" id="readmeHelpModal" tabindex="-1" aria-labelledby="readmeHelpModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="readmeHelpModalLabel">项目帮助</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body help-modal-body">
+        <div id="readmeHelpContent" class="markdown-body text-muted">正在加载帮助内容...</div>
+      </div>
+    </div>
+  </div>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.5.2/dist/umd/popper.min.js"></script>
@@ -480,6 +509,39 @@
     rendered = rendered.replace(/href="static\//g, 'href="/static/');
     rendered = rendered.replace(/src="static\//g, 'src="/static/');
     return DOMPurify.sanitize(rendered);
+  }
+
+  const helpButton = document.getElementById('helpButton');
+  const helpModalElement = document.getElementById('readmeHelpModal');
+  const helpModalContent = document.getElementById('readmeHelpContent');
+  const helpModal = helpModalElement ? new bootstrap.Modal(helpModalElement) : null;
+  let helpContentLoaded = false;
+
+  async function loadReadmeHelp(){
+    if (!helpModalContent) return;
+    helpModalContent.innerHTML = '<span class="text-muted">正在加载帮助内容...</span>';
+    try {
+      const response = await fetch('{% url "readme_help" %}', {
+        headers: { 'X-Requested-With': 'XMLHttpRequest' }
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload.ok) {
+        throw new Error(payload.error || '无法加载 README 内容');
+      }
+      helpModalContent.innerHTML = '<div class="markdown-body">' + renderMarkdownSafe(payload.content || '') + '</div>';
+      helpContentLoaded = true;
+    } catch (error) {
+      helpModalContent.innerHTML = '<div class="text-danger">帮助内容加载失败：' + escapeHtml(error.message || String(error)) + '</div>';
+    }
+  }
+
+  if (helpButton && helpModal) {
+    helpButton.addEventListener('click', async () => {
+      helpModal.show();
+      if (!helpContentLoaded) {
+        await loadReadmeHelp();
+      }
+    });
   }
 
   function findEmbeddedMedia(text){
