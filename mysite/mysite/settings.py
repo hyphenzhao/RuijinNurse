@@ -10,6 +10,7 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/4.2/ref/settings/
 """
 
+import os
 from pathlib import Path
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -132,3 +133,8 @@ LOGIN_EXEMPT_URLS = [
     r'healthcheck/?',       # if you have a monitoring endpoint
     r'static/.*',         # only if you insist on public static files
 ]
+
+WHISPER_HOST = os.environ.get('WHISPER_HOST', '127.0.0.1')
+WHISPER_PORT = os.environ.get('WHISPER_PORT', '8001')
+PIPER_HOST = os.environ.get('PIPER_HOST', '127.0.0.1')
+PIPER_PORT = os.environ.get('PIPER_PORT', '8002')

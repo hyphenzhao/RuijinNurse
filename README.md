@@ -401,6 +401,92 @@ cd RuijinNurse
 
 这样可以在不破坏现有对话架构的前提下，逐步引入中文语音输入输出能力。
 
+### 4.5 运行测试用例
+
+当前项目使用 `Django TestCase` 编写测试。测试文件位于：
+
+- `mysite/promotions/tests.py`
+
+#### 4.5.1 运行全部 Django 测试
+
+进入 `mysite/` 目录后执行：
+
+```bash
+python manage.py test
+```
+
+#### 4.5.2 仅运行 `promotions` app 的测试
+
+```bash
+python manage.py test promotions
+```
+
+#### 4.5.3 仅运行语音相关测试
+
+```bash
+python manage.py test promotions.tests.SpeechServiceIntegrationTests
+```
+
+#### 4.5.4 当前语音测试覆盖内容
+
+当前已添加的语音测试主要验证：
+
+1. 可通过 `settings.py` 定义 `Whisper` 与 `Piper` 的主机和端口
+2. 可将文本 `你好，世界。这是一个语音转化测试。` 发送给 `Piper` 并生成语音文件
+3. 可将生成后的音频发送给 `Whisper` 再识别回文本，并与原始输入做匹配
+4. 文本比较时会忽略中英文标点和空白差异
+
+#### 4.5.5 运行语音测试前的准备
+
+语音测试不是纯单元测试，而是依赖外部语音服务的集成测试。
+
+在运行前，请确保：
+
+- `Whisper` 服务已经启动，并提供 `POST /asr`
+- `Piper` 服务已经启动，并提供 `POST /tts`
+- `mysite/mysite/settings.py` 中的以下配置正确：
+
+```python
+WHISPER_HOST = os.environ.get('WHISPER_HOST', '127.0.0.1')
+WHISPER_PORT = os.environ.get('WHISPER_PORT', '8001')
+PIPER_HOST = os.environ.get('PIPER_HOST', '127.0.0.1')
+PIPER_PORT = os.environ.get('PIPER_PORT', '8002')
+```
+
+也可以通过环境变量覆盖默认值。
+
+Windows PowerShell 示例：
+
+```powershell
+$env:WHISPER_HOST="127.0.0.1"
+$env:WHISPER_PORT="8001"
+$env:PIPER_HOST="127.0.0.1"
+$env:PIPER_PORT="8002"
+python manage.py test promotions.tests.SpeechServiceIntegrationTests
+```
+
+macOS / Linux 示例：
+
+```bash
+export WHISPER_HOST=127.0.0.1
+export WHISPER_PORT=8001
+export PIPER_HOST=127.0.0.1
+export PIPER_PORT=8002
+python manage.py test promotions.tests.SpeechServiceIntegrationTests
+```
+
+#### 4.5.6 测试结果说明
+
+- 如果语音服务未启动，相关测试会因网络请求失败而报错
+- 如果 `Piper` 生成的音频为空，测试会失败
+- 如果 `Whisper` 识别结果与原文差异过大，回环测试会失败
+
+对于中文医疗场景，建议后续继续增加：
+
+- 医疗术语识别测试
+- 药名 / 科室名 / 症状名识别测试
+- 不同说话人、不同语速下的识别测试
+
 ---
 
 ## 5️⃣ 仓库目录结构（当前）
