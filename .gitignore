@@ -16,6 +16,7 @@ desktop.ini
 # Build artifacts
 *.log
 *.tmp
+*.mp4
 
 ########################
 # PYTHON / DJANGO
@@ -44,7 +45,6 @@ db.sqlite3
 # Static/media (generated)
 staticfiles/
 static_root/
-static/
 media/
 media_root/
 
