@@ -333,6 +333,12 @@ def readme_help_view(request):
     return JsonResponse({'ok': True, 'content': content})
 
 
+def promotion_stop_view(request):
+    if request.method != 'POST':
+        return JsonResponse({'ok': False, 'error': 'POST only'}, status=405)
+    return JsonResponse({'ok': True})
+
+
 def setup_view(request):
     base_path = _get_base_path()
     role_file_path = Path(base_path) / 'role.txt'

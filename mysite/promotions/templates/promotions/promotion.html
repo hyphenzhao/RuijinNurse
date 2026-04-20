@@ -69,8 +69,11 @@
             40% { transform: translateY(-3px); opacity:1; }
         }
 
-        .chat-input{padding:.75rem;display:flex;gap:.5rem;align-items:center;}
-        .chat-input textarea{resize:vertical;min-height:90px;max-height:200px;}
+        .chat-input{padding:.75rem;display:flex;gap:.5rem;align-items:flex-end;}
+        .chat-input-field{position:relative;flex:1 1 auto;}
+        .chat-input textarea{resize:vertical;min-height:90px;max-height:200px;padding-right:3.25rem;}
+        .chat-input-actions{display:flex;gap:.5rem;align-items:center;}
+        .stop-square-btn{position:absolute;right:.5rem;bottom:.5rem;width:2.25rem;height:2.25rem;padding:0;display:inline-flex;align-items:center;justify-content:center;border-radius:.5rem;line-height:1;font-size:.95rem;z-index:2;}
 
         .sidebar{background:#fff;border-radius:.5rem;box-shadow:0 0.125rem 0.25rem rgba(0,0,0,.075);overflow:hidden;}
         .sidebar-header{padding:.75rem 1rem;border-bottom:1px solid rgba(0,0,0,.075);display:flex;align-items:center;justify-content:space-between;}
@@ -166,8 +169,14 @@
                 max-height: 140px;          /* 防止太高挡住聊天记录 */
             }
 
-            .chat-input button {
+            .chat-input-actions button {
                 width: 100%;                /* 提交按钮占满一行，方便点 */
+            }
+
+            .stop-square-btn {
+                width: 2.25rem;
+                min-width: 2.25rem;
+                height: 2.25rem;
             }
             
             /* Unity fills whole screen as background */
@@ -358,8 +367,13 @@
                     {% endfor %}
                 </div>
                 <div class="chat-input">
-                    <textarea id="promotionText" name="promotion_text" class="form-control" placeholder="在此输入您的问题"></textarea>
-                    <button type="submit" id="submit-button" class="btn btn-primary">提交问题</button>
+                    <div class="chat-input-field">
+                        <textarea id="promotionText" name="promotion_text" class="form-control" placeholder="在此输入您的问题"></textarea>
+                        <button type="button" id="stop-button" class="btn btn-outline-danger stop-square-btn" title="停止朗读/生成" aria-label="停止朗读/生成" disabled>■</button>
+                    </div>
+                    <div class="chat-input-actions">
+                        <button type="submit" id="submit-button" class="btn btn-primary">提交问题</button>
+                    </div>
                 </div>
             </div>
 
@@ -718,12 +732,56 @@
         }
     }
 
+    let currentStreamController = null;
+    let speechQueue = [];
+    let speechSpeaking = false;
+    let speechEnabled = 'speechSynthesis' in window;
+
+    function stopSpeechPlayback() {
+        speechQueue = [];
+        speechSpeaking = false;
+        if (speechEnabled) {
+            window.speechSynthesis.cancel();
+        }
+    }
+
+    function chunkSpeechText(text) {
+        return (text || '')
+            .split(/(?<=[。！？!?；;\n])/)
+            .map(part => part.trim())
+            .filter(Boolean);
+    }
+
+    function flushSpeechQueue() {
+        if (!speechEnabled || speechSpeaking || !speechQueue.length) return;
+        speechSpeaking = true;
+        const utterance = new SpeechSynthesisUtterance(speechQueue.shift());
+        utterance.lang = 'zh-CN';
+        utterance.rate = 1;
+        utterance.onend = () => {
+            speechSpeaking = false;
+            flushSpeechQueue();
+        };
+        utterance.onerror = () => {
+            speechSpeaking = false;
+            flushSpeechQueue();
+        };
+        window.speechSynthesis.speak(utterance);
+    }
+
+    function queueSpeechText(text) {
+        if (!speechEnabled) return;
+        speechQueue.push(...chunkSpeechText(text));
+        flushSpeechQueue();
+    }
+
     // Stream via fetch (POST) and parse SSE-like events
-    async function streamReply(formEl) {
+    async function streamReply(formEl, controller) {
         const resp = await fetch("{% url 'promotion_stream' %}", {
             method: "POST",
             headers: { "X-CSRFToken": CSRF_TOKEN },
-            body: new FormData(formEl)
+            body: new FormData(formEl),
+            signal: controller.signal,
         });
         if (!resp.ok || !resp.body) throw new Error('网络错误');
 
@@ -769,6 +827,7 @@
             }
         });
         const submitBtn = document.getElementById('submit-button');
+        const stopBtn = document.getElementById('stop-button');
         const ttsAudio = document.getElementById('tts-audio');
         const hiddenModelSelect = document.getElementById('modelSelect');
         const agentSelect = document.getElementById('agentSelect');
@@ -842,6 +901,27 @@
 
         syncSelectionState();
 
+        async function stopCurrentGeneration() {
+            if (currentStreamController) {
+                currentStreamController.abort();
+                currentStreamController = null;
+            }
+            stopSpeechPlayback();
+            ttsAudio.removeAttribute('src');
+            try {
+                await fetch("{% url 'promotion_stop' %}", {
+                    method: 'POST',
+                    headers: { 'X-CSRFToken': CSRF_TOKEN }
+                });
+            } catch (_) {}
+        }
+
+        if (stopBtn) {
+            stopBtn.addEventListener('click', async ()=>{
+                await stopCurrentGeneration();
+            });
+        }
+
         form.addEventListener('submit', async (e)=>{
             e.preventDefault();
             const text = textarea.value.trim();
@@ -856,6 +936,8 @@
                 }
                 return;
             }
+
+            await stopCurrentGeneration();
 
             // 1) show user bubble immediately
             const userBubble = makeBubble('user', '<strong>问题：</strong> ' + $('<div/>').text(text).html());
@@ -919,12 +1001,15 @@
             submitBtn.textContent = '思考中...';
             submitBtn.classList.remove('btn-primary');
             submitBtn.classList.add('btn-secondary');
+            if (stopBtn) stopBtn.disabled = false;
 
             // buffer for full answer
             let fullBuffer = '';
+            let speechBuffer = '';
+            currentStreamController = new AbortController();
 
             try {
-                const streamer = await streamReply(form);
+                const streamer = await streamReply(form, currentStreamController);
                 for await (const { ev, data } of streamer.iterEvents()) {
                     if (ev === 'status') {
                         // status events can be ignored
@@ -942,6 +1027,13 @@
                         // append final-answer tokens to answer stream
                         const content = data.content || '';
                         fullBuffer += content;
+                        speechBuffer += content;
+
+                        const speechParts = chunkSpeechText(speechBuffer);
+                        if (speechParts.length > 1) {
+                            speechParts.slice(0, -1).forEach(part => queueSpeechText(part));
+                            speechBuffer = speechParts[speechParts.length - 1] || '';
+                        }
 
                         if (answerBodyEarly) {
                             appendText(answerBodyEarly, content);
@@ -951,13 +1043,11 @@
                         messages.scrollTop = messages.scrollHeight;
                     } else if (ev === 'done') {
                         // done: optional audio
-                        if (data.audio_url) {
-                            ttsAudio.setAttribute('src', data.audio_url);
-                            const p = ttsAudio.play(); if (p) p.catch(()=>{});
-                        }
+                        if (speechBuffer.trim()) queueSpeechText(speechBuffer);
+                        speechBuffer = '';
 
                         // hide the thinking bubble (but keep it in DOM for expand if user wants)
-                        const thinkingCont = thinkingMsg.querySelector('.thinking');
+                        const thinkingCont = thinkingMsg ? thinkingMsg.querySelector('.thinking') : null;
                         if (thinkingCont) thinkingCont.style.display = 'none';
 
                         // create the final answer bubble and stream the buffered content into it (simulate streaming)
@@ -984,15 +1074,22 @@
                     }
                 }
             } catch (err) {
+                if (err.name === 'AbortError') {
+                    const stopMsg = makeBubble('ai', '<div class="answer"><strong>答复：</strong><div class="markdown-body mt-2">（已停止生成与朗读）</div></div>');
+                    messages.appendChild(stopMsg);
+                } else {
                 // show a simple inline error in a visible answer bubble
-                const errorMsg = makeBubble('ai', '<div class="answer"><strong>答复：</strong><div class="markdown-body mt-2">（发生错误）' + escapeHtml(err.message) + '</div></div>');
-                messages.appendChild(errorMsg);
+                    const errorMsg = makeBubble('ai', '<div class="answer"><strong>答复：</strong><div class="markdown-body mt-2">（发生错误）' + escapeHtml(err.message) + '</div></div>');
+                    messages.appendChild(errorMsg);
+                }
             } finally {
                 // 4) re-enable UI
+                currentStreamController = null;
                 submitBtn.disabled = false;
                 submitBtn.textContent = '提交问题';
                 submitBtn.classList.remove('btn-secondary');
                 submitBtn.classList.add('btn-primary');
+                if (stopBtn) stopBtn.disabled = true;
                 textarea.value = '';
                 messages.scrollTop = messages.scrollHeight;
             }
