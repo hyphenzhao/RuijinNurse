@@ -30,23 +30,50 @@ public class MotionBridge : MonoBehaviour
 
     float _savedSpeed = 1f;
 
+    [Header("Root motion")]
+    [Tooltip("If true, discards root translation from animation to prevent drifting (keeps rotation).")]
+    [SerializeField] bool lockRootPosition = true;
+
+    Vector3 _initialPosition;
+    Quaternion _initialRotation;
+
     void Reset() { animator = GetComponent<Animator>(); }
 
     void Awake()
     {
         if (!animator) animator = GetComponent<Animator>();
+
+        _initialPosition = transform.position;
+        _initialRotation = transform.rotation;
+
         animator.cullingMode = AnimatorCullingMode.AlwaysAnimate;
         animator.updateMode = AnimatorUpdateMode.Normal;
         animator.speed = 1f;
         Time.timeScale = 1f;
         _savedSpeed = 1f;
 
+        if (lockRootPosition)
+            animator.applyRootMotion = true;
+
         // Start in the chosen default (Greet)
         Crossfade(defaultState, log: true);
     }
 
+    void OnAnimatorMove()
+    {
+        if (!lockRootPosition || animator == null) return;
+
+        // Keep the avatar anchored; apply only root rotation.
+        transform.position = _initialPosition;
+        transform.rotation = _initialRotation * animator.deltaRotation;
+    }
+
     void Update()
     {
+        // Intentionally do not force transform.position every frame.
+        // If the animation clip has root motion, handle it via Animator settings
+        // or OnAnimatorMove instead of hard-locking to (0,0,0).
+
 #if UNITY_EDITOR
         bool k1 = false, k2 = false, k3 = false, pause = false, slower = false, faster = false, restart = false;
 #if ENABLE_INPUT_SYSTEM

@@ -77,14 +77,13 @@ htmlcov/
 ########################
 
 # Unity auto-generated folders
-[Ll]ibrary/
-[Tt]emp/
-[Oo]bj/
-[Bb]uild/
-[Bb]uilds/
-[Ll]ogs/
-[Mm]emoryCaptures/
-[Uu]serSettings/
+Unity/[Ll]ibrary/
+Unity/[Tt]emp/
+Unity/[Oo]bj/
+Unity/[Ll]ogs/
+Unity/[Mm]emoryCaptures/
+Unity/[Uu]serSettings/
+Unity/.vs/
 
 # Keep these Unity build folders tracked for upload
 !Unity/Build/
@@ -97,28 +96,28 @@ htmlcov/
 !uploads/Unity/Builds/**
 
 # Unity crash reports
-sysinfo.txt
+Unity/sysinfo.txt
 
 # Visual Studio / Rider / .NET
 .vs/
-*.csproj
-*.unityproj
-*.sln
-*.suo
-*.user
-*.userprefs
-*.pidb
-*.booproj
-*.svd
-*.pdb
-*.mdb
-*.opendb
-*.VC.db
-*.sln.DotSettings
+Unity/*.csproj
+Unity/*.unityproj
+Unity/*.sln
+Unity/*.suo
+Unity/*.user
+Unity/*.userprefs
+Unity/*.pidb
+Unity/*.booproj
+Unity/*.svd
+Unity/*.pdb
+Unity/*.mdb
+Unity/*.opendb
+Unity/*.VC.db
+Unity/*.sln.DotSettings
 
 # Rider / JetBrains
 .idea/
-*.DotSettings.user
+Unity/*.DotSettings.user
 
 # Unity cache / build outputs
 *.apk
