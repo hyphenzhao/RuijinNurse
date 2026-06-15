@@ -37,11 +37,9 @@ class ChatViewModel: ObservableObject {
     @Published var showIntroVideo = false  // Disabled — video file not present on server
     @Published var autoReadEnabled = false  // Toggle for auto-read during streaming
 
-    /// Set by AppDelegate — used for auto-reading responses during streaming
+    /// Set by AppDelegate — used for auto-reading responses after generation completes
     weak var ttsManager: TTSManager?
 
-    /// Tracks text spoken during auto-read to avoid repeating sentences
-    private var lastSpokenLength = 0
     private let sseClient = SSEClient()
 
     // MARK: - Init
@@ -124,7 +122,6 @@ class ChatViewModel: ObservableObject {
         messages = []
         showIntroVideo = true
         autoReadEnabled = false
-        lastSpokenLength = 0
         ttsManager?.stop()
         addSystemMessage("👋 已登出")
     }
@@ -223,7 +220,6 @@ class ChatViewModel: ObservableObject {
         isStreaming = false
         streamingAnswer = ""
         streamingThinking = ""
-        lastSpokenLength = 0
     }
 
     // MARK: - Private
@@ -232,21 +228,7 @@ class ChatViewModel: ObservableObject {
             self?.streamingThinking += text
         }
         sseClient.onDelta = { [weak self] text in
-            guard let self = self else { return }
-            self.streamingAnswer += text
-
-            // Auto-read: queue newly completed sentences without interrupting
-            if self.autoReadEnabled, let tts = self.ttsManager {
-                let full = self.streamingAnswer
-                let newText = String(full.dropFirst(self.lastSpokenLength))
-                let sentences = self.extractCompleteSentences(newText)
-                for s in sentences {
-                    tts.appendSpeech(s)  // Queues silently, doesn't interrupt
-                }
-                if let lastBoundary = full.lastIndex(where: { "。！？\n；".contains($0) }) {
-                    self.lastSpokenLength = full.distance(from: full.startIndex, to: lastBoundary) + 1
-                }
-            }
+            self?.streamingAnswer += text
         }
         sseClient.onDone = { [weak self] final in
             guard let self = self else { return }
@@ -256,17 +238,13 @@ class ChatViewModel: ObservableObject {
             self.messages.append(msg)
             self.isStreaming = false
 
-            // Speak any remaining text if auto-read is on
+            // Auto-read: speak the entire response once generation is complete
             if self.autoReadEnabled, let tts = self.ttsManager {
-                let remaining = String(content.dropFirst(self.lastSpokenLength)).trimmingCharacters(in: .whitespacesAndNewlines)
-                if !remaining.isEmpty {
-                    tts.appendSpeech(remaining)
-                }
+                tts.speak(content)
             }
 
             self.streamingAnswer = ""
             self.streamingThinking = ""
-            self.lastSpokenLength = 0
         }
         sseClient.onError = { [weak self] error in
             guard let self = self else { return }
@@ -278,27 +256,8 @@ class ChatViewModel: ObservableObject {
             self.isStreaming = false
             self.streamingAnswer = ""
             self.streamingThinking = ""
-            self.lastSpokenLength = 0
             self.ttsManager?.stop()
         }
-    }
-
-    /// Extract complete Chinese sentences (ending with 。！？\n) from text
-    private func extractCompleteSentences(_ text: String) -> [String] {
-        var sentences: [String] = []
-        var current = ""
-        for char in text {
-            current.append(char)
-            if "。！？\n".contains(char) {
-                let trimmed = current.trimmingCharacters(in: .whitespacesAndNewlines)
-                if !trimmed.isEmpty {
-                    sentences.append(trimmed)
-                }
-                current = ""
-            }
-        }
-        // Don't include incomplete last sentence — it'll be spoken when completed
-        return sentences
     }
 
     private func addSystemMessage(_ text: String) {
