@@ -176,10 +176,21 @@ struct MarkdownContentView: View {
     let content: String
 
     private var attributedContent: AttributedString {
-        if #available(iOS 15.0, *),
-           let md = try? AttributedString(markdown: content,
-               options: AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace)) {
-            return md
+        if #available(iOS 15.0, *) {
+            do {
+                return try AttributedString(
+                    markdown: content,
+                    options: AttributedString.MarkdownParsingOptions(interpretedSyntax: .full)
+                )
+            } catch {
+                // Fallback: try inline-only for robustness
+                if let md = try? AttributedString(
+                    markdown: content,
+                    options: AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace)
+                ) {
+                    return md
+                }
+            }
         }
         return AttributedString(content)
     }

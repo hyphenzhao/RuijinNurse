@@ -35,6 +35,7 @@ class SSEClient: NSObject {
 
         responseData = Data()
         buffer = ""
+        accumulatedAnswer = ""
         task = session.dataTask(with: request)
         task?.resume()
     }
@@ -42,6 +43,7 @@ class SSEClient: NSObject {
     func disconnect() {
         task?.cancel()
         task = nil
+        accumulatedAnswer = ""
     }
 }
 
@@ -106,7 +108,24 @@ extension SSEClient: URLSessionDataDelegate {
         }
     }
 
+    /// Accumulated answer text for fallback when done JSON is malformed
+    private var accumulatedAnswer = ""
+
     private func processSSEMessage(event: String, data: String) {
+        // Handle "done" event specially — always trigger completion,
+        // even if JSON is malformed (e.g. split across network chunks)
+        if event == "done" {
+            var final = ""
+            if let jsonData = data.data(using: .utf8),
+               let dict = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any] {
+                final = dict["final"] as? String ?? ""
+            }
+            DispatchQueue.main.async { [weak self] in
+                self?.onDone?(final.isEmpty ? (self?.accumulatedAnswer ?? "") : final)
+            }
+            return
+        }
+
         guard let jsonData = data.data(using: .utf8),
               let dict = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any]
         else { return }
@@ -119,11 +138,9 @@ extension SSEClient: URLSessionDataDelegate {
                 }
             case "delta":
                 if let content = dict["content"] as? String {
+                    self?.accumulatedAnswer += content
                     self?.onDelta?(content)
                 }
-            case "done":
-                let final = dict["final"] as? String ?? ""
-                self?.onDone?(final)
             default:
                 break
             }
