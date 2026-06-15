@@ -15,6 +15,8 @@
 		504EC30F1FED79650016851F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 504EC30E1FED79650016851F /* Assets.xcassets */; };
 		504EC3121FED79650016851F /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 504EC3101FED79650016851F /* LaunchScreen.storyboard */; };
 		50B271D11FEDC1A000F3C39B /* public in Resources */ = {isa = PBXBuildFile; fileRef = 50B271D01FEDC1A000F3C39B /* public */; };
+		893891AC2FDFDBB7002B323F /* TTSManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 893891AB2FDFDBB7002B323F /* TTSManager.swift */; };
+		893891AD2FDFDBB7002B323F /* SpeechRecognizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 893891AA2FDFDBB7002B323F /* SpeechRecognizer.swift */; };
 		89D550592FD2AFEE003ECE46 /* ServerConfigView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 89D550572FD2AFEE003ECE46 /* ServerConfigView.swift */; };
 		89D5505A2FD2AFEE003ECE46 /* SSEClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 89D550582FD2AFEE003ECE46 /* SSEClient.swift */; };
 		89D5505B2FD2AFEE003ECE46 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 89D550552FD2AFEE003ECE46 /* Models.swift */; };
@@ -36,6 +38,8 @@
 		504EC3131FED79650016851F /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		50B271D01FEDC1A000F3C39B /* public */ = {isa = PBXFileReference; lastKnownFileType = folder; path = public; sourceTree = "<group>"; };
 		554A27EE5880EE92D4A0F754 /* Pods_App.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_App.framework; sourceTree = BUILT_PRODUCTS_DIR; };
+		893891AA2FDFDBB7002B323F /* SpeechRecognizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechRecognizer.swift; sourceTree = "<group>"; };
+		893891AB2FDFDBB7002B323F /* TTSManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TTSManager.swift; sourceTree = "<group>"; };
 		89D550512FD2AFEE003ECE46 /* AgentListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentListView.swift; sourceTree = "<group>"; };
 		89D550522FD2AFEE003ECE46 /* ChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatView.swift; sourceTree = "<group>"; };
 		89D550532FD2AFEE003ECE46 /* ChatViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatViewModel.swift; sourceTree = "<group>"; };
@@ -79,6 +83,8 @@
 		504EC3061FED79650016851F /* App */ = {
 			isa = PBXGroup;
 			children = (
+				893891AA2FDFDBB7002B323F /* SpeechRecognizer.swift */,
+				893891AB2FDFDBB7002B323F /* TTSManager.swift */,
 				89D550512FD2AFEE003ECE46 /* AgentListView.swift */,
 				89D550522FD2AFEE003ECE46 /* ChatView.swift */,
 				89D550532FD2AFEE003ECE46 /* ChatViewModel.swift */,
@@ -234,6 +240,8 @@
 			files = (
 				89D550592FD2AFEE003ECE46 /* ServerConfigView.swift in Sources */,
 				89D5505A2FD2AFEE003ECE46 /* SSEClient.swift in Sources */,
+				893891AC2FDFDBB7002B323F /* TTSManager.swift in Sources */,
+				893891AD2FDFDBB7002B323F /* SpeechRecognizer.swift in Sources */,
 				89D5505B2FD2AFEE003ECE46 /* Models.swift in Sources */,
 				89D5505C2FD2AFEE003ECE46 /* AgentListView.swift in Sources */,
 				89D5505D2FD2AFEE003ECE46 /* ContentView.swift in Sources */,

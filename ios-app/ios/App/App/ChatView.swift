@@ -510,12 +510,17 @@ struct ChatInputView: View {
     private func toggleMic() {
         if speechRecognizer.isRecording {
             speechRecognizer.stopRecording()
-            inputText = speechRecognizer.recognizedText.trimmingCharacters(in: .whitespacesAndNewlines)
+            let recognized = speechRecognizer.recognizedText.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !recognized.isEmpty {
+                inputText = recognized
+            }
         } else {
             do {
                 try speechRecognizer.startRecording()
             } catch {
                 print("[ChatInputView] Mic error: \(error.localizedDescription)")
+                // Show error in the text field placeholder area
+                inputText = ""
             }
         }
     }
