@@ -35,7 +35,7 @@ class ChatViewModel: ObservableObject {
     @Published var streamingThinking = ""
     @Published var streamingAnswer = ""
     @Published var showIntroVideo = true   // Show intro video on launch (matches web)
-    @Published var autoReadEnabled = false  // Toggle for auto-read during streaming
+    @Published var autoReadEnabled = true   // Auto-read enabled by default
 
     /// Set by AppDelegate — used for auto-reading responses after generation completes
     weak var ttsManager: TTSManager?

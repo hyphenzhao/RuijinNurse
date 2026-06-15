@@ -5,6 +5,7 @@ struct ContentView: View {
     @EnvironmentObject var vm: ChatViewModel
     @State private var showConfig = false
     @State private var showLogin = false
+    @State private var sidebarCollapsed = true
 
     var body: some View {
         if vm.needsSetup {
@@ -21,11 +22,20 @@ struct ContentView: View {
     var mainView: some View {
         NavigationSplitView {
             AgentListView()
-                .navigationSplitViewColumnWidth(210)
+                .navigationSplitViewColumnWidth(sidebarCollapsed ? 0.1 : 210)
         } content: {
             VStack(spacing: 0) {
                 // Top bar with controls (more reliable than toolbar in SplitView)
                 HStack {
+                    // Sidebar toggle
+                    Button {
+                        withAnimation { sidebarCollapsed.toggle() }
+                    } label: {
+                        Image(systemName: sidebarCollapsed ? "sidebar.left" : "sidebar.left")
+                            .font(.title3)
+                            .foregroundColor(sidebarCollapsed ? .secondary : .blue)
+                    }
+
                     Text("🏥 瑞金神外护理助手")
                         .font(.headline)
                     Spacer()
@@ -70,7 +80,7 @@ struct ContentView: View {
             }
         } detail: {
             mediaPanel
-                .navigationSplitViewColumnWidth(160)
+                .navigationSplitViewColumnWidth(0.1)
         }
         .navigationTitle("")
         .sheet(isPresented: $showConfig) {
