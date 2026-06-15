@@ -34,7 +34,7 @@ class ChatViewModel: ObservableObject {
     @Published var isStreaming = false
     @Published var streamingThinking = ""
     @Published var streamingAnswer = ""
-    @Published var showIntroVideo = true
+    @Published var showIntroVideo = false  // Disabled — video file not present on server
 
     private let sseClient = SSEClient()
 

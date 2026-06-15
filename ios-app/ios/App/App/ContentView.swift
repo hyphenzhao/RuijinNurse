@@ -21,15 +21,19 @@ struct ContentView: View {
     var mainView: some View {
         NavigationSplitView {
             AgentListView()
+                .navigationSplitViewColumnWidth(min: 180, ideal: 220)
         } content: {
             VStack(spacing: 0) {
                 connectionBanner
                 ChatMessagesView()
                 ChatInputView()
             }
+            .navigationSplitViewColumnWidth(min: 320, ideal: 480)
         } detail: {
             mediaPanel
+                .navigationSplitViewColumnWidth(min: 260, ideal: 320)
         }
+        .navigationSplitViewStyle(.balanced)
         .navigationTitle("")
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
@@ -259,16 +263,22 @@ struct SetupView: View {
 struct UnityWebView: UIViewRepresentable {
     let url: URL
 
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
+
     func makeUIView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
         config.allowsInlineMediaPlayback = true
         config.mediaTypesRequiringUserActionForPlayback = []
+        config.preferences.setValue(true, forKey: "allowFileAccessFromFileURLs")
 
         let prefs = WKWebpagePreferences()
         prefs.allowsContentJavaScript = true
         config.defaultWebpagePreferences = prefs
 
         let webView = WKWebView(frame: .zero, configuration: config)
+        webView.navigationDelegate = context.coordinator
         webView.scrollView.isScrollEnabled = true
         webView.isOpaque = false
         webView.backgroundColor = .black
@@ -277,4 +287,18 @@ struct UnityWebView: UIViewRepresentable {
     }
 
     func updateUIView(_ webView: WKWebView, context: Context) {}
+
+    class Coordinator: NSObject, WKNavigationDelegate {
+        func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+            print("[UnityWebView] Failed to load: \(error.localizedDescription)")
+        }
+
+        func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+            print("[UnityWebView] Navigation failed: \(error.localizedDescription)")
+        }
+
+        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            print("[UnityWebView] Loaded successfully: \(webView.url?.absoluteString ?? "unknown")")
+        }
+    }
 }
