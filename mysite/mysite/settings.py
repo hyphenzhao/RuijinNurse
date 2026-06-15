@@ -138,9 +138,7 @@ LOGIN_EXEMPT_URLS = [
     r'admin/login/?',       # allow admin login page
     r'healthcheck/?',       # if you have a monitoring endpoint
     r'static/.*',         # only if you insist on public static files
-    r'api/v1/auth/login/?',    # JWT login endpoint
-    r'api/v1/auth/refresh/?',  # JWT token refresh
-    r'api/v1/health/?',        # health check for mobile app — no auth required
+    r'api/v1/.*',           # REST API — DRF handles auth via JWT, not Django sessions
 ]
 
 WHISPER_HOST = os.environ.get('WHISPER_HOST', '127.0.0.1')
