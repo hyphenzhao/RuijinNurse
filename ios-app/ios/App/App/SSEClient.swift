@@ -5,6 +5,7 @@ class SSEClient: NSObject {
     private var task: URLSessionDataTask?
     private var buffer = ""
     private var responseData = Data()  // Accumulate for error extraction
+    private var accumulatedAnswer = "" // Fallback for done event
     var isStreaming: Bool { task != nil }
 
     var onThinking: ((String) -> Void)?
@@ -107,9 +108,6 @@ extension SSEClient: URLSessionDataDelegate {
             }
         }
     }
-
-    /// Accumulated answer text for fallback when done JSON is malformed
-    private var accumulatedAnswer = ""
 
     private func processSSEMessage(event: String, data: String) {
         // Handle "done" event specially — always trigger completion,
