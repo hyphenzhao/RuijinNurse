@@ -35,7 +35,13 @@ class ChatViewModel: ObservableObject {
     @Published var streamingThinking = ""
     @Published var streamingAnswer = ""
     @Published var showIntroVideo = false  // Disabled — video file not present on server
+    @Published var autoReadEnabled = false  // Toggle for auto-read during streaming
 
+    /// Set by AppDelegate — used for auto-reading responses during streaming
+    weak var ttsManager: TTSManager?
+
+    /// Tracks text spoken during auto-read to avoid repeating sentences
+    private var lastSpokenLength = 0
     private let sseClient = SSEClient()
 
     // MARK: - Init
@@ -117,6 +123,9 @@ class ChatViewModel: ObservableObject {
         needsSetup = true
         messages = []
         showIntroVideo = true
+        autoReadEnabled = false
+        lastSpokenLength = 0
+        ttsManager?.stop()
         addSystemMessage("👋 已登出")
     }
 
@@ -205,6 +214,7 @@ class ChatViewModel: ObservableObject {
 
     func stopGeneration() {
         sseClient.disconnect()
+        ttsManager?.stop()
         if !streamingAnswer.isEmpty || !streamingThinking.isEmpty {
             let finalContent = streamingAnswer.isEmpty ? "（已停止生成）" : streamingAnswer
             let msg = ChatMessage(role: .assistant, content: finalContent, thinking: streamingThinking.isEmpty ? nil : streamingThinking, timestamp: Date())
@@ -213,6 +223,7 @@ class ChatViewModel: ObservableObject {
         isStreaming = false
         streamingAnswer = ""
         streamingThinking = ""
+        lastSpokenLength = 0
     }
 
     // MARK: - Private
@@ -221,7 +232,23 @@ class ChatViewModel: ObservableObject {
             self?.streamingThinking += text
         }
         sseClient.onDelta = { [weak self] text in
-            self?.streamingAnswer += text
+            guard let self = self else { return }
+            self.streamingAnswer += text
+
+            // Auto-read: speak newly completed sentences as they stream in
+            if self.autoReadEnabled, let tts = self.ttsManager {
+                let full = self.streamingAnswer
+                // Find complete sentences (ending with 。！？\n) since last spoke
+                let newText = String(full.dropFirst(self.lastSpokenLength))
+                let sentences = self.extractCompleteSentences(newText)
+                for s in sentences {
+                    tts.speak(s)
+                }
+                // Update spoke position (track by sentence boundary to avoid mid-char cuts)
+                if let lastBoundary = full.lastIndex(where: { "。！？\n；".contains($0) }) {
+                    self.lastSpokenLength = full.distance(from: full.startIndex, to: lastBoundary) + 1
+                }
+            }
         }
         sseClient.onDone = { [weak self] final in
             guard let self = self else { return }
@@ -230,8 +257,18 @@ class ChatViewModel: ObservableObject {
             let msg = ChatMessage(role: .assistant, content: content, thinking: think, timestamp: Date())
             self.messages.append(msg)
             self.isStreaming = false
+
+            // Speak any remaining text if auto-read is on
+            if self.autoReadEnabled, let tts = self.ttsManager {
+                let remaining = String(content.dropFirst(self.lastSpokenLength)).trimmingCharacters(in: .whitespacesAndNewlines)
+                if !remaining.isEmpty {
+                    tts.speak(remaining)
+                }
+            }
+
             self.streamingAnswer = ""
             self.streamingThinking = ""
+            self.lastSpokenLength = 0
         }
         sseClient.onError = { [weak self] error in
             guard let self = self else { return }
@@ -243,7 +280,27 @@ class ChatViewModel: ObservableObject {
             self.isStreaming = false
             self.streamingAnswer = ""
             self.streamingThinking = ""
+            self.lastSpokenLength = 0
+            self.ttsManager?.stop()
         }
+    }
+
+    /// Extract complete Chinese sentences (ending with 。！？\n) from text
+    private func extractCompleteSentences(_ text: String) -> [String] {
+        var sentences: [String] = []
+        var current = ""
+        for char in text {
+            current.append(char)
+            if "。！？\n".contains(char) {
+                let trimmed = current.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !trimmed.isEmpty {
+                    sentences.append(trimmed)
+                }
+                current = ""
+            }
+        }
+        // Don't include incomplete last sentence — it'll be spoken when completed
+        return sentences
     }
 
     private func addSystemMessage(_ text: String) {

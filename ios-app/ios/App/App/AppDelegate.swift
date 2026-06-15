@@ -12,6 +12,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         // Create the SwiftUI root view with the shared ViewModel
         let viewModel = ChatViewModel()
         let ttsManager = TTSManager()
+        viewModel.ttsManager = ttsManager
         let contentView = ContentView()
             .environmentObject(viewModel)
             .environmentObject(ttsManager)

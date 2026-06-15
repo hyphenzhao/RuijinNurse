@@ -38,6 +38,17 @@ struct ContentView: View {
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
                 HStack(spacing: 8) {
+                    // Auto-read toggle
+                    if vm.isLoggedIn {
+                        Button {
+                            vm.autoReadEnabled.toggle()
+                        } label: {
+                            Image(systemName: vm.autoReadEnabled ? "speaker.wave.2.fill" : "speaker.wave.2")
+                                .foregroundColor(vm.autoReadEnabled ? .blue : .secondary)
+                        }
+                        .help(vm.autoReadEnabled ? "自动朗读已开启" : "自动朗读已关闭")
+                    }
+
                     Circle()
                         .fill(connectionColor)
                         .frame(width: 10, height: 10)
