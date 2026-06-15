@@ -1,0 +1,25 @@
+# RuijinNurse iOS Capacitor App
+
+# Dependencies
+node_modules/
+
+# iOS build artifacts (except the ones we edit)
+ios/App/Pods/
+ios/App/build/
+ios/App/DerivedData/
+ios/App/*.xcworkspace/xcuserdata/
+ios/App/*.xcodeproj/xcuserdata/
+ios/App/*.xcodeproj/project.xcworkspace/xcuserdata/
+
+# Unity build (large binary, managed separately)
+ios/UnityBuild/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Misc
+.DS_Store
+*.log

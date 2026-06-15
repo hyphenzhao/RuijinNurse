@@ -1,0 +1,607 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8"/>
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-status-bar-style" content="default"/>
+<title>瑞金神外护理助手</title>
+<style>
+/* ============ Reset & Base ============ */
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --safe-top:env(safe-area-inset-top,0px);
+  --safe-bottom:env(safe-area-inset-bottom,0px);
+  --bs-blue:#0d6efd;--bs-gray:#6c757d;--bs-light:#f8f9fa;--bs-dark:#212529;
+  --bs-border:rgba(0,0,0,.075);--bs-radius:.5rem;
+}
+html,body{height:100%;width:100%;overflow:hidden;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,"PingFang SC","Microsoft YaHei",sans-serif;font-size:15px;color:var(--bs-dark);background:#eef2f7}
+body{display:flex;flex-direction:column}
+
+/* ============ Top Bar ============ */
+.topbar{background:var(--bs-blue);color:#fff;padding:10px 12px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+.topbar h1{font-size:1.1rem;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.topbar .actions{display:flex;gap:6px;flex-shrink:0}
+.topbar button{background:rgba(255,255,255,.2);border:none;color:#fff;padding:5px 10px;border-radius:6px;font-size:.8rem;cursor:pointer;white-space:nowrap}
+.topbar button:active{background:rgba(255,255,255,.35)}
+
+/* ============ Connection Banner ============ */
+.conn-banner{display:none;padding:6px 12px;font-size:.8rem;text-align:center;flex-shrink:0}
+.conn-banner.show{display:block}
+.conn-banner.offline{background:#fff3cd;color:#856404}
+.conn-banner.error{background:#f8d7da;color:#721c24}
+.conn-banner.online{background:#d4edda;color:#155724}
+
+/* ============ Layout ============ */
+.layout{display:flex;flex:1 1 auto;overflow:hidden;gap:0}
+.panel{display:flex;flex-direction:column;min-width:0}
+.panel-left{flex:0 0 30%;border-right:1px solid var(--bs-border);background:#fff;max-width:340px}
+.panel-center{flex:1 1 auto;display:flex;flex-direction:column}
+.panel-right{flex:0 0 280px;border-left:1px solid var(--bs-border);background:#fff;transition:all .3s}
+
+/* ============ Left sidebar ============ */
+.sidebar-header{padding:10px 12px;border-bottom:1px solid var(--bs-border);display:flex;align-items:center;justify-content:space-between;font-weight:600;font-size:.9rem}
+.sidebar-body{padding:10px 12px;overflow-y:auto;flex:1;font-size:.85rem}
+.agent-item{padding:8px 10px;margin-bottom:4px;border-radius:6px;cursor:pointer;border:1px solid transparent}
+.agent-item.active{background:#e8f0fe;border-color:var(--bs-blue);color:var(--bs-blue);font-weight:600}
+.agent-item:active{background:#dceeff}
+.agent-item .name{font-weight:600;font-size:.9rem}
+.agent-item .model{font-size:.75rem;color:var(--bs-gray)}
+.sidebar-divider{margin:10px 0;border-top:1px solid var(--bs-border)}
+
+/* ============ Chat area ============ */
+.chat-messages{flex:1 1 auto;overflow-y:auto;padding:12px;background:#f5f7fa;scroll-behavior:smooth}
+.msg{display:flex;margin-bottom:10px}
+.msg.user{justify-content:flex-end}
+.msg.ai{justify-content:flex-start}
+.bubble{max-width:82%;padding:8px 12px;border-radius:12px;word-wrap:break-word;white-space:pre-wrap;line-height:1.5;font-size:.92rem}
+.msg.user .bubble{background:#dceeff;border-top-right-radius:4px}
+.msg.ai .bubble{background:#fff;border-top-left-radius:4px;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+.msg.system .bubble{background:var(--bs-light);color:var(--bs-gray);font-size:.82rem;text-align:center;max-width:100%;border-radius:8px}
+.bubble .thinking{color:var(--bs-gray);font-size:.82rem;margin-bottom:4px;font-style:italic}
+.bubble .answer{color:var(--bs-dark)}
+.bubble .answer p{margin:0 0 4px}
+.bubble .answer p:last-child{margin-bottom:0}
+.bubble .answer code{background:#eef2f7;padding:1px 5px;border-radius:3px;font-size:.88em}
+.bubble .answer pre{background:#1e293b;color:#e2e8f0;padding:10px;border-radius:6px;overflow:auto;font-size:.82em;margin:6px 0}
+.dots{display:inline-flex;gap:3px;align-items:center}
+.dots span{width:6px;height:6px;border-radius:50%;background:var(--bs-gray);animation:bounce 1.2s infinite}
+.dots span:nth-child(2){animation-delay:.2s}
+.dots span:nth-child(3){animation-delay:.4s}
+@keyframes bounce{0%,80%,100%{transform:translateY(0);opacity:.6}40%{transform:translateY(-3px);opacity:1}}
+
+/* ============ Chat input ============ */
+.chat-input{padding:10px 12px;background:#fff;border-top:1px solid var(--bs-border);display:flex;gap:8px;align-items:flex-end;flex-shrink:0}
+.chat-input textarea{flex:1;resize:none;min-height:44px;max-height:120px;padding:10px 12px;border:1px solid #dee2e6;border-radius:10px;font-size:.92rem;line-height:1.4;font-family:inherit;outline:none}
+.chat-input textarea:focus{border-color:var(--bs-blue);box-shadow:0 0 0 2px rgba(13,110,253,.15)}
+.chat-input button{padding:10px 18px;background:var(--bs-blue);color:#fff;border:none;border-radius:10px;font-size:.9rem;font-weight:600;cursor:pointer;white-space:nowrap;flex-shrink:0}
+.chat-input button:disabled{background:#adb5bd;cursor:not-allowed}
+.chat-input button.stop{background:#dc3545}
+
+/* ============ Right sidebar ============ */
+.media-card{padding:10px 12px}
+.media-card .title{font-size:.85rem;font-weight:600;margin-bottom:6px;color:var(--bs-gray)}
+.media-card video,.media-card img{width:100%;border-radius:6px}
+.media-card .placeholder{width:100%;height:180px;background:#f0f2f5;border-radius:6px;display:flex;align-items:center;justify-content:center;color:var(--bs-gray);font-size:.85rem}
+
+/* ============ Server Config Overlay ============ */
+.overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:100;align-items:center;justify-content:center}
+.overlay.show{display:flex}
+.config-card{background:#fff;border-radius:12px;padding:24px;max-width:400px;width:90%;box-shadow:0 12px 40px rgba(0,0,0,.2)}
+.config-card h2{font-size:1.2rem;margin-bottom:4px}
+.config-card .sub{font-size:.85rem;color:var(--bs-gray);margin-bottom:16px}
+.config-card label{display:block;font-size:.85rem;font-weight:600;margin-bottom:4px}
+.config-card input{width:100%;padding:10px;border:1px solid #dee2e6;border-radius:8px;font-size:.95rem;margin-bottom:12px}
+.config-card input:focus{border-color:var(--bs-blue);outline:none}
+.config-card .error{color:#dc3545;font-size:.8rem;margin-bottom:8px;display:none}
+.config-card button{width:100%;padding:10px;background:var(--bs-blue);color:#fff;border:none;border-radius:8px;font-size:.95rem;font-weight:600;cursor:pointer;margin-bottom:6px}
+.config-card button:disabled{background:#adb5bd}
+.config-card button.secondary{background:var(--bs-light);color:var(--bs-dark);border:1px solid #dee2e6}
+.config-card .hint{font-size:.78rem;color:var(--bs-gray);text-align:center}
+
+/* ============ Mobile adapt ============ */
+@media(max-width:768px){
+  .panel-left{display:none}
+  .panel-right{display:none}
+  .panel-center{flex:1}
+}
+</style>
+</head>
+<body>
+
+<!-- ===== Top Bar ===== -->
+<div class="topbar" style="padding-top:calc(10px + var(--safe-top))">
+  <h1>🏥 瑞金神外护理助手</h1>
+  <div class="actions">
+    <button onclick="toggleSidebar()" id="sidebarBtn" style="display:none">智能体</button>
+    <button onclick="openConfig()">⚙️ 设置</button>
+  </div>
+</div>
+
+<!-- ===== Connection Banner ===== -->
+<div id="connBanner" class="conn-banner offline show">⚠️ 未连接服务器 — 请在设置中配置服务器地址</div>
+
+<!-- ===== Main Layout ===== -->
+<div class="layout">
+
+  <!-- Left: Agent list -->
+  <div class="panel panel-left" id="leftPanel">
+    <div class="sidebar-header">🤖 智能体</div>
+    <div class="sidebar-body" id="agentList">
+      <div style="color:var(--bs-gray);text-align:center;padding:20px">连接服务器后自动加载</div>
+    </div>
+  </div>
+
+  <!-- Center: Chat -->
+  <div class="panel panel-center">
+    <div class="chat-messages" id="chatMessages">
+      <div class="msg system"><div class="bubble">
+        👋 欢迎使用瑞金神外护理助手<br>
+        <small>请先在 ⚙️ 设置 中配置服务器地址，连接后即可开始智能问答。</small>
+      </div></div>
+    </div>
+    <div class="chat-input" style="padding-bottom:calc(10px + var(--safe-bottom))">
+      <textarea id="msgInput" rows="1" placeholder="输入您的问题..." disabled></textarea>
+      <button id="sendBtn" onclick="sendMessage()" disabled>发送</button>
+      <button id="stopBtn" class="stop" style="display:none" onclick="stopGeneration()">■</button>
+    </div>
+  </div>
+
+  <!-- Right: Media -->
+  <div class="panel panel-right" id="rightPanel">
+    <div class="media-card">
+      <div class="title">📺 参考视频</div>
+      <div class="placeholder" id="mediaPlaceholder">连接服务器后加载内容</div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== Server Config Overlay ===== -->
+<div class="overlay show" id="configOverlay">
+  <div class="config-card">
+    <h2>⚙️ 配置服务器</h2>
+    <div class="sub">请输入 RuijinNurse 服务器的地址</div>
+    <label>服务器地址</label>
+    <input type="text" id="serverUrlInput" placeholder="http://192.168.1.100:8000" value="http://localhost:8000"/>
+    <div class="error" id="configError"></div>
+    <button id="connectBtn" onclick="connectToServer()">连接服务器</button>
+    <button class="secondary" onclick="closeConfig()">稍后设置</button>
+    <div class="hint">请确保设备与服务器在同一网络</div>
+  </div>
+</div>
+
+<script>
+// ============================================================
+//  RuijinNurse App Shell — Self-contained UI
+//  Works offline, connects to Django API for chat
+// ============================================================
+(function(){
+'use strict';
+
+// --- State ---
+var SERVER_URL = localStorage.getItem('ruijin_server_url') || 'http://localhost:8000';
+var JWT_ACCESS = localStorage.getItem('ruijin_jwt_access') || null;
+var JWT_REFRESH = localStorage.getItem('ruijin_jwt_refresh') || null;
+var activeModel = 'model:qwen3:4b';
+var agents = [];
+var currentAbortController = null;
+var isStreaming = false;
+
+// --- DOM refs ---
+var $msg    = document.getElementById('chatMessages');
+var $input  = document.getElementById('msgInput');
+var $send   = document.getElementById('sendBtn');
+var $stop   = document.getElementById('stopBtn');
+var $banner = document.getElementById('connBanner');
+var $overlay= document.getElementById('configOverlay');
+var $urlInp = document.getElementById('serverUrlInput');
+var $configErr = document.getElementById('configError');
+var $connBtn= document.getElementById('connectBtn');
+var $agents = document.getElementById('agentList');
+var $sidebarBtn = document.getElementById('sidebarBtn');
+var $left   = document.getElementById('leftPanel');
+
+// --- Init ---
+$urlInp.value = SERVER_URL;
+
+// Check if we already have a server configured
+if (localStorage.getItem('ruijin_server_url')) {
+  $overlay.classList.remove('show');
+  checkConnection();
+} else {
+  $overlay.classList.add('show');
+}
+
+// Enter to send
+$input.addEventListener('keydown', function(e){
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+});
+
+// Auto-resize textarea
+$input.addEventListener('input', function(){
+  this.style.height = 'auto';
+  this.style.height = Math.min(this.scrollHeight, 120) + 'px';
+});
+
+// --- Functions ---
+
+window.toggleSidebar = function(){
+  if ($left.style.display === 'none') {
+    $left.style.display = 'flex';
+  } else {
+    $left.style.display = 'none';
+  }
+};
+
+window.openConfig = function(){
+  $overlay.classList.add('show');
+  $urlInp.value = SERVER_URL;
+  $configErr.style.display = 'none';
+};
+
+window.closeConfig = function(){
+  $overlay.classList.remove('show');
+  if (SERVER_URL && localStorage.getItem('ruijin_server_url')) {
+    checkConnection();
+  }
+};
+
+window.connectToServer = function(){
+  var url = $urlInp.value.trim().replace(/\/+$/, '');
+  if (!url) { showConfigError('请输入服务器地址'); return; }
+
+  $configErr.style.display = 'none';
+  $connBtn.disabled = true;
+  $connBtn.textContent = '正在连接...';
+  SERVER_URL = url;
+  localStorage.setItem('ruijin_server_url', url);
+
+  api('GET', '/api/v1/health/', null, false)
+    .then(function(r){
+      if (r.ok) {
+        setBanner('online', '✅ 已连接到 ' + url);
+        $overlay.classList.remove('show');
+        $input.disabled = false;
+        $send.disabled = false;
+        loadAgents();
+        addSystemMsg('✅ 已成功连接到服务器，您可以开始提问了。');
+      } else {
+        setBanner('error', '⚠️ 服务器响应异常');
+      }
+      $connBtn.disabled = false;
+      $connBtn.textContent = '连接服务器';
+    })
+    .catch(function(){
+      setBanner('offline', '⚠️ 无法连接服务器，但仍可查看本地内容');
+      $overlay.classList.remove('show');
+      $connBtn.disabled = false;
+      $connBtn.textContent = '连接服务器';
+      addSystemMsg('⚠️ 无法连接到服务器。请检查：\n1. 服务器是否已启动\n2. 设备与服务器是否在同一网络\n3. 服务器地址是否正确');
+    });
+};
+
+function showConfigError(msg){
+  $configErr.textContent = msg;
+  $configErr.style.display = 'block';
+  $connBtn.disabled = false;
+  $connBtn.textContent = '连接服务器';
+}
+
+function setBanner(type, text){
+  $banner.className = 'conn-banner ' + type + ' show';
+  $banner.textContent = text;
+}
+
+function checkConnection(){
+  setBanner('offline', '⏳ 正在检查服务器连接...');
+  api('GET', '/api/v1/health/', null, false)
+    .then(function(r){
+      if (r.ok) {
+        setBanner('online', '✅ 已连接 — ' + SERVER_URL);
+        $input.disabled = false;
+        $send.disabled = false;
+        loadAgents();
+      } else {
+        setBanner('error', '⚠️ 服务器返回异常状态: ' + r.status);
+      }
+    })
+    .catch(function(){
+      setBanner('offline', '⚠️ 服务器未连接 — 请在设置中配置后重试');
+    });
+}
+
+// --- API helper ---
+function api(method, path, body, auth){
+  if (auth === undefined) auth = true;
+  var headers = { 'Content-Type': 'application/json' };
+  if (auth && JWT_ACCESS) {
+    headers['Authorization'] = 'Bearer ' + JWT_ACCESS;
+  }
+  var opts = { method: method, headers: headers };
+  if (body) opts.body = JSON.stringify(body);
+
+  return fetch(SERVER_URL + path, opts)
+    .then(function(r){
+      if (r.status === 401 && JWT_REFRESH) {
+        // Try token refresh
+        return fetch(SERVER_URL + '/api/v1/auth/refresh/', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ refresh: JWT_REFRESH })
+        }).then(function(rr){ return rr.json(); })
+        .then(function(data){
+          if (data.access) {
+            JWT_ACCESS = data.access;
+            localStorage.setItem('ruijin_jwt_access', data.access);
+            headers['Authorization'] = 'Bearer ' + data.access;
+            return fetch(SERVER_URL + path, {
+              method: method, headers: headers, body: opts.body
+            });
+          }
+          return r;
+        });
+      }
+      return r;
+    });
+}
+
+// --- Load agents ---
+function loadAgents(){
+  api('GET', '/api/v1/agents/')
+    .then(function(r){ return r.json(); })
+    .then(function(data){
+      if (Array.isArray(data) && data.length > 0) {
+        agents = data;
+        renderAgents();
+        $sidebarBtn.style.display = 'block';
+        if (agents[0]) activeModel = 'agent:' + agents[0].slug;
+      } else {
+        // No agents configured, use default model
+        $agents.innerHTML = '<div style="color:var(--bs-gray);text-align:center;padding:10px;font-size:.82rem">暂无智能体<br>使用默认模型</div>';
+      }
+    })
+    .catch(function(){
+      $agents.innerHTML = '<div style="color:var(--bs-gray);text-align:center;padding:10px;font-size:.82rem">加载智能体失败</div>';
+    });
+}
+
+function renderAgents(){
+  $agents.innerHTML = agents.map(function(a, i){
+    var cls = ('agent:' + a.slug === activeModel) ? 'agent-item active' : 'agent-item';
+    return '<div class="' + cls + '" onclick="selectAgent(\'' + a.slug + '\')">' +
+      '<div class="name">' + escHtml(a.name) + '</div>' +
+      '<div class="model">' + escHtml(a.ollama_model) + '</div>' +
+    '</div>';
+  }).join('');
+}
+
+window.selectAgent = function(slug){
+  activeModel = 'agent:' + slug;
+  renderAgents();
+  addSystemMsg('🤖 已切换到：' + slug);
+};
+
+// --- Chat ---
+function addSystemMsg(text){
+  var div = document.createElement('div');
+  div.className = 'msg system';
+  div.innerHTML = '<div class="bubble">' + escHtml(text).replace(/\n/g, '<br>') + '</div>';
+  $msg.appendChild(div);
+  $msg.scrollTop = $msg.scrollHeight;
+}
+
+function addUserMsg(text){
+  var div = document.createElement('div');
+  div.className = 'msg user';
+  div.innerHTML = '<div class="bubble">' + escHtml(text) + '</div>';
+  $msg.appendChild(div);
+  $msg.scrollTop = $msg.scrollHeight;
+}
+
+function addAiBubble(){
+  var div = document.createElement('div');
+  div.className = 'msg ai';
+  div.id = 'aiBubble';
+  div.innerHTML = '<div class="bubble"><div class="answer" id="aiAnswer"></div></div>';
+  $msg.appendChild(div);
+  $msg.scrollTop = $msg.scrollHeight;
+  return div;
+}
+
+window.sendMessage = function(){
+  var text = $input.value.trim();
+  if (!text || isStreaming) return;
+  if (!SERVER_URL) { openConfig(); return; }
+
+  // Ensure we have auth
+  if (!JWT_ACCESS) {
+    addSystemMsg('⚠️ 请先登录。请输入您的用户名和密码。');
+    promptLogin(text);
+    return;
+  }
+
+  $input.value = '';
+  $input.style.height = 'auto';
+  $send.style.display = 'none';
+  $stop.style.display = 'inline-block';
+  isStreaming = true;
+
+  addUserMsg(text);
+
+  // Add placeholder for AI response
+  var aiDiv = addAiBubble();
+  var answerEl = aiDiv.querySelector('#aiAnswer');
+  answerEl.innerHTML = '<div class="dots"><span></span><span></span><span></span></div>';
+
+  // Use SSE streaming
+  currentAbortController = new AbortController();
+
+  fetch(SERVER_URL + '/api/v1/chat/stream/', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer ' + JWT_ACCESS
+    },
+    body: JSON.stringify({ text: text, model: activeModel }),
+    signal: currentAbortController.signal
+  }).then(function(response){
+    if (!response.ok) {
+      return response.json().then(function(err){
+        throw new Error(err.detail || '请求失败 (' + response.status + ')');
+      });
+    }
+    return readSSE(response, answerEl);
+  }).catch(function(err){
+    if (err.name === 'AbortError') {
+      if (answerEl.textContent.trim() === '') {
+        answerEl.textContent = '（已停止生成）';
+      }
+    } else {
+      answerEl.textContent = '❌ 错误: ' + (err.message || '未知错误');
+    }
+    finishStream();
+  });
+};
+
+function readSSE(response, answerEl){
+  var reader = response.body.getReader();
+  var decoder = new TextDecoder();
+  var buffer = '';
+  var thinkingEl = null;
+  var fullText = '';
+
+  function processLine(line){
+    if (line.startsWith('event: ')) {
+      var eventType = line.slice(7);
+      return { event: eventType, data: null };
+    }
+    if (line.startsWith('data: ')) {
+      return { event: null, data: line.slice(6) };
+    }
+    return null;
+  }
+
+  function pump(){
+    return reader.read().then(function(result){
+      if (result.done) { finishStream(); return; }
+
+      buffer += decoder.decode(result.value, { stream: true });
+      var lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+
+      var currentEvent = null;
+      var currentData = null;
+
+      for (var i = 0; i < lines.length; i++) {
+        var parsed = processLine(lines[i]);
+        if (!parsed) continue;
+
+        if (parsed.event !== null) currentEvent = parsed.event;
+        if (parsed.data !== null) currentData = parsed.data;
+
+        if (currentEvent && currentData !== null) {
+          try {
+            var payload = JSON.parse(currentData);
+            handleSSEEvent(currentEvent, payload, answerEl);
+          } catch(e) {}
+          currentEvent = null;
+          currentData = null;
+        }
+      }
+      return pump();
+    });
+  }
+  return pump();
+}
+
+function handleSSEEvent(event, data, answerEl){
+  if (event === 'thinking') {
+    var thinkEl = answerEl.querySelector('.thinking');
+    if (!thinkEl) {
+      thinkEl = document.createElement('div');
+      thinkEl.className = 'thinking';
+      answerEl.insertBefore(thinkEl, answerEl.firstChild);
+    }
+    thinkEl.textContent += data.content || '';
+  } else if (event === 'delta') {
+    answerEl.textContent += data.content || '';
+  } else if (event === 'done') {
+    if (!answerEl.textContent.trim()) {
+      answerEl.textContent = data.final || '';
+    }
+    finishStream();
+  }
+  $msg.scrollTop = $msg.scrollHeight;
+}
+
+function finishStream(){
+  isStreaming = false;
+  $send.style.display = 'inline-block';
+  $stop.style.display = 'none';
+  currentAbortController = null;
+  // Remove id from bubble so next one gets fresh
+  var el = document.getElementById('aiBubble');
+  if (el) el.removeAttribute('id');
+}
+
+window.stopGeneration = function(){
+  if (currentAbortController) {
+    currentAbortController.abort();
+  }
+  api('POST', '/api/v1/chat/stop/', {});
+  finishStream();
+};
+
+// --- Simple login prompt ---
+function promptLogin(pendingText){
+  var user = prompt('请输入用户名:');
+  if (!user) return;
+  var pass = prompt('请输入密码:');
+  if (!pass) return;
+
+  fetch(SERVER_URL + '/api/v1/auth/login/', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username: user, password: pass })
+  }).then(function(r){ return r.json(); })
+  .then(function(data){
+    if (data.access) {
+      JWT_ACCESS = data.access;
+      JWT_REFRESH = data.refresh;
+      localStorage.setItem('ruijin_jwt_access', data.access);
+      localStorage.setItem('ruijin_jwt_refresh', data.refresh);
+      addSystemMsg('✅ 登录成功，欢迎 ' + (data.user && data.user.username || user));
+      setBanner('online', '✅ 已连接 — ' + SERVER_URL);
+      $input.disabled = false;
+      $send.disabled = false;
+      loadAgents();
+      if (pendingText) {
+        $input.value = pendingText;
+        sendMessage();
+      }
+    } else {
+      addSystemMsg('❌ 登录失败: ' + (data.detail || '用户名或密码错误'));
+    }
+  }).catch(function(){
+    addSystemMsg('❌ 登录请求失败，请检查服务器连接');
+  });
+}
+
+// --- Utils ---
+function escHtml(s){
+  var d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+// Export for Capacitor bridge
+window.RuijinNurse = {
+  SERVER_URL: SERVER_URL,
+  isCapacitor: !!(window.Capacitor && window.Capacitor.Plugins)
+};
+
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,30 @@
+{
+  "name": "ruijin-nurse-ios",
+  "version": "1.0.0",
+  "description": "瑞金医院功能神外宣讲AI — iOS/iPad App (Capacitor hybrid)",
+  "main": "src/index.html",
+  "scripts": {
+    "postinstall": "node scripts/patch-capacitor-charset.js",
+    "cap:init": "npx cap init '瑞金神外护理助手' com.ruijin.nurse",
+    "cap:add:ios": "npx cap add ios",
+    "cap:sync": "npx cap sync",
+    "cap:copy": "npx cap copy",
+    "cap:open:ios": "npx cap open ios",
+    "cap:run:ios": "npx cap run ios",
+    "cap:run:ios:live": "npx cap run ios -l --external"
+  },
+  "dependencies": {
+    "@capacitor/core": "^6.0.0",
+    "@capacitor/ios": "^6.0.0",
+    "@capacitor/cli": "^6.0.0",
+    "@capacitor/network": "^6.0.0",
+    "@capacitor/preferences": "^6.0.0",
+    "@capacitor/push-notifications": "^6.0.0",
+    "@capacitor/share": "^6.0.0",
+    "@capacitor/splash-screen": "^6.0.0"
+  },
+  "devDependencies": {},
+  "author": "Ruijin Hospital",
+  "license": "UNLICENSED",
+  "private": true
+}

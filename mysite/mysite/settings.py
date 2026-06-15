@@ -38,11 +38,17 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'rest_framework',
+    'rest_framework_simplejwt',
+    'corsheaders',
+    'drf_spectacular',
     'promotions',
+    'api',
 ]
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'corsheaders.middleware.CorsMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -132,9 +138,48 @@ LOGIN_EXEMPT_URLS = [
     r'admin/login/?',       # allow admin login page
     r'healthcheck/?',       # if you have a monitoring endpoint
     r'static/.*',         # only if you insist on public static files
+    r'api/v1/auth/login/?',    # JWT login endpoint
+    r'api/v1/auth/refresh/?',  # JWT token refresh
 ]
 
 WHISPER_HOST = os.environ.get('WHISPER_HOST', '127.0.0.1')
 WHISPER_PORT = os.environ.get('WHISPER_PORT', '8001')
 PIPER_HOST = os.environ.get('PIPER_HOST', '127.0.0.1')
 PIPER_PORT = os.environ.get('PIPER_PORT', '8002')
+
+# ---------------------------------------------------------------------------
+#  Django REST Framework + JWT + CORS + OpenAPI
+# ---------------------------------------------------------------------------
+
+REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': [
+        'rest_framework_simplejwt.authentication.JWTAuthentication',
+        'rest_framework.authentication.SessionAuthentication',
+    ],
+    'DEFAULT_PERMISSION_CLASSES': [
+        'rest_framework.permissions.IsAuthenticated',
+    ],
+    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
+}
+
+from datetime import timedelta
+
+SIMPLE_JWT = {
+    'ACCESS_TOKEN_LIFETIME': timedelta(hours=2),
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=30),
+    'ROTATE_REFRESH_TOKENS': True,
+    'BLACKLIST_AFTER_ROTATION': False,
+    'AUTH_HEADER_TYPES': ('Bearer',),
+    'AUTH_HEADER_NAME': 'HTTP_AUTHORIZATION',
+}
+
+# CORS — in development allow all origins; restrict in production
+CORS_ALLOWED_ORIGINS = []
+CORS_ALLOW_ALL_ORIGINS = DEBUG
+CORS_ALLOW_CREDENTIALS = True
+
+SPECTACULAR_SETTINGS = {
+    'TITLE': 'RuijinNurse API',
+    'DESCRIPTION': '瑞金医院功能神经外科智能护理助手 — 移动端 REST API',
+    'VERSION': '1.0.0',
+}

@@ -1,0 +1,23 @@
+{
+  "appId": "com.ruijin.nurse",
+  "appName": "瑞金神外护理助手",
+  "webDir": "src",
+  "server": {
+    "cleartext": true,
+    "allowNavigation": [
+      "*"
+    ]
+  },
+  "ios": {
+    "contentInset": "always",
+    "scrollEnabled": true,
+    "limitsNavigationsToAppBoundDomains": false
+  },
+  "plugins": {
+    "SplashScreen": {
+      "launchShowDuration": 2000,
+      "launchAutoHide": true,
+      "backgroundColor": "#0d6efd"
+    }
+  }
+}
