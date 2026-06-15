@@ -24,20 +24,11 @@ struct ContentView: View {
                 .navigationSplitViewColumnWidth(min: 180, ideal: 220)
         } content: {
             VStack(spacing: 0) {
-                connectionBanner
-                ChatMessagesView()
-                ChatInputView()
-            }
-            .navigationSplitViewColumnWidth(min: 320, ideal: 480)
-        } detail: {
-            mediaPanel
-                .navigationSplitViewColumnWidth(min: 260, ideal: 320)
-        }
-        .navigationSplitViewStyle(.balanced)
-        .navigationTitle("")
-        .toolbar {
-            ToolbarItem(placement: .navigationBarTrailing) {
-                HStack(spacing: 8) {
+                // Top bar with controls (more reliable than toolbar in SplitView)
+                HStack {
+                    Text("🏥 瑞金神外护理助手")
+                        .font(.headline)
+                    Spacer()
                     // Auto-read toggle
                     Button {
                         vm.autoReadEnabled.toggle()
@@ -59,20 +50,31 @@ struct ContentView: View {
                         showLogin = true
                     } label: {
                         Image(systemName: vm.isLoggedIn ? "person.circle.fill" : "person.circle")
+                            .font(.title3)
                     }
 
                     Button {
                         showConfig = true
                     } label: {
                         Image(systemName: "gearshape")
+                            .font(.title3)
                     }
                 }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(Color(.systemBackground))
+
+                connectionBanner
+                ChatMessagesView()
+                ChatInputView()
             }
-            ToolbarItem(placement: .navigationBarLeading) {
-                Text("🏥 瑞金神外护理助手")
-                    .font(.headline)
-            }
+            .navigationSplitViewColumnWidth(min: 320, ideal: 480)
+        } detail: {
+            mediaPanel
+                .navigationSplitViewColumnWidth(min: 260, ideal: 320)
         }
+        .navigationSplitViewStyle(.balanced)
+        .navigationTitle("")
         .sheet(isPresented: $showConfig) {
             ServerConfigView()
         }
