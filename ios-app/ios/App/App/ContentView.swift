@@ -71,7 +71,7 @@ struct ContentView: View {
             .navigationSplitViewColumnWidth(min: 320, ideal: 480)
         } detail: {
             mediaPanel
-                .navigationSplitViewColumnWidth(min: 260, ideal: 320)
+                .navigationSplitViewColumnWidth(min: 160, ideal: 200)
         }
         .navigationSplitViewStyle(.balanced)
         .navigationTitle("")
