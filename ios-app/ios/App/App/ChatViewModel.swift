@@ -53,7 +53,15 @@ class ChatViewModel: ObservableObject {
         setupSSECallbacks()
         if !needsSetup {
             addSystemMessage("👋 欢迎回来")
-            Task { await checkConnection() }
+            Task {
+                await checkConnection()
+                // Load agents and models when returning with saved tokens
+                if connectionState == .connected {
+                    async let _agents: () = loadAgents()
+                    async let _models: () = loadModels()
+                    _ = await (_agents, _models)
+                }
+            }
         }
     }
 
