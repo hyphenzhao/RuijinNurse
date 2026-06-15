@@ -112,9 +112,18 @@ class ChatViewModel: ObservableObject {
                 selectedModelKey = "agent:\(first.slug)"
             }
             modelsLoaded = true
+            if agents.isEmpty {
+                addSystemMessage("ℹ️ 服务器暂无可用智能体，使用默认模型。")
+            }
         } catch {
-            // Silently fail — agents are optional
+            addSystemMessage("⚠️ 加载智能体列表失败: \(error.localizedDescription)")
         }
+    }
+
+    /// URL for the Unity WebGL content served by Django
+    var unityWebGLURL: URL? {
+        guard let base = URL(string: serverURL) else { return nil }
+        return base.appendingPathComponent("static/promotions/unity/Build/index.html")
     }
 
     // MARK: - Chat

@@ -1,4 +1,5 @@
 import SwiftUI
+import WebKit
 
 struct ContentView: View {
     @EnvironmentObject var vm: ChatViewModel
@@ -27,22 +28,7 @@ struct ContentView: View {
                 ChatInputView()
             }
         } detail: {
-            VStack {
-                Text("📺 参考视频")
-                    .font(.headline)
-                    .padding(.top)
-                Rectangle()
-                    .fill(Color(.systemGray6))
-                    .frame(height: 200)
-                    .cornerRadius(12)
-                    .overlay(
-                        Text("连接服务器后加载内容")
-                            .foregroundColor(.secondary)
-                            .font(.caption)
-                    )
-                    .padding()
-                Spacer()
-            }
+            mediaPanel
         }
         .navigationTitle("")
         .toolbar {
@@ -75,6 +61,39 @@ struct ContentView: View {
         }
         .sheet(isPresented: $showLogin) {
             LoginView()
+        }
+    }
+
+    // MARK: - Media Panel (Unity WebGL)
+
+    @ViewBuilder
+    private var mediaPanel: some View {
+        VStack(spacing: 0) {
+            Text("📺 参考内容")
+                .font(.headline)
+                .padding(.top, 8)
+                .padding(.bottom, 8)
+
+            if vm.connectionState == .connected, let unityURL = vm.unityWebGLURL {
+                UnityWebView(url: unityURL)
+                    .cornerRadius(12)
+                    .padding(8)
+            } else {
+                Rectangle()
+                    .fill(Color(.systemGray6))
+                    .cornerRadius(12)
+                    .overlay(
+                        VStack(spacing: 8) {
+                            Image(systemName: "play.rectangle")
+                                .font(.largeTitle)
+                                .foregroundColor(.secondary)
+                            Text("连接服务器后自动加载内容")
+                                .foregroundColor(.secondary)
+                                .font(.caption)
+                        }
+                    )
+                    .padding(8)
+            }
         }
     }
 
@@ -233,4 +252,29 @@ struct SetupView: View {
             }
         }
     }
+}
+
+// MARK: - Unity WebGL WKWebView Wrapper
+
+struct UnityWebView: UIViewRepresentable {
+    let url: URL
+
+    func makeUIView(context: Context) -> WKWebView {
+        let config = WKWebViewConfiguration()
+        config.allowsInlineMediaPlayback = true
+        config.mediaTypesRequiringUserActionForPlayback = []
+
+        let prefs = WKWebpagePreferences()
+        prefs.allowsContentJavaScript = true
+        config.defaultWebpagePreferences = prefs
+
+        let webView = WKWebView(frame: .zero, configuration: config)
+        webView.scrollView.isScrollEnabled = true
+        webView.isOpaque = false
+        webView.backgroundColor = .black
+        webView.load(URLRequest(url: url))
+        return webView
+    }
+
+    func updateUIView(_ webView: WKWebView, context: Context) {}
 }
