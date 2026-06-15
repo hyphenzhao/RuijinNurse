@@ -175,16 +175,19 @@ struct MessageBubbleView: View {
 struct MarkdownContentView: View {
     let content: String
 
-    var body: some View {
-        if #available(iOS 15.0, *) {
-            Text(try? AttributedString(markdown: content,
-                   options: AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace)))
-                ?? AttributedString(content)
-        } else {
-            Text(content)
+    private var attributedContent: AttributedString {
+        if #available(iOS 15.0, *),
+           let md = try? AttributedString(markdown: content,
+               options: AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace)) {
+            return md
         }
-        .font(.subheadline)
-        .textSelection(.enabled)
+        return AttributedString(content)
+    }
+
+    var body: some View {
+        Text(attributedContent)
+            .font(.subheadline)
+            .textSelection(.enabled)
     }
 }
 
