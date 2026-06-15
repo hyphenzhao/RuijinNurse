@@ -175,22 +175,36 @@ struct MessageBubbleView: View {
 struct MarkdownContentView: View {
     let content: String
 
-    /// Minimal preprocessing: replace \n with "  \n" (two spaces + newline)
-    /// This creates hard line breaks in standard markdown while keeping
-    /// block syntax (tables |, headings #, lists -, code blocks ```) intact.
-    /// Simple string replacement — no regex, no line analysis, no garbled text risk.
-    private var preprocessed: String {
-        content.replacingOccurrences(of: "\n", with: "  \n")
+    /// Check if content has markdown block syntax (tables, headings, lists, code)
+    private var hasBlockSyntax: Bool {
+        content.contains("|") ||           // likely a table
+        content.contains("```") ||         // code block
+        content.contains("\n#") ||         // heading
+        content.contains("\n- ") ||        // bullet list
+        content.contains("\n* ") ||        // bullet list alt
+        content.contains("\n> ")           // blockquote
     }
 
     private var attributedContent: AttributedString {
         if #available(iOS 15.0, *) {
-            // .full renders tables, headings, lists, code blocks, bold, italic, links
-            if let md = try? AttributedString(
-                markdown: preprocessed,
-                options: AttributedString.MarkdownParsingOptions(interpretedSyntax: .full)
-            ) {
-                return md
+            if hasBlockSyntax {
+                // .full mode: renders tables, headings, code blocks, lists
+                // Use  \n for hard line breaks (standard markdown)
+                let processed = content.replacingOccurrences(of: "\n", with: "  \n")
+                if let md = try? AttributedString(
+                    markdown: processed,
+                    options: AttributedString.MarkdownParsingOptions(interpretedSyntax: .full)
+                ) {
+                    return md
+                }
+            } else {
+                // .inlineOnly mode: preserves all line breaks, renders **bold** *italic* etc.
+                if let md = try? AttributedString(
+                    markdown: content,
+                    options: AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace)
+                ) {
+                    return md
+                }
             }
         }
         return AttributedString(content)
