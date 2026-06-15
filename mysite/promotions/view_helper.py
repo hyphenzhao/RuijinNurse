@@ -133,7 +133,8 @@ def generate_sse_stream(
         _save_session_context(session_path, session_data)
 
     except Exception as e:
-        err = f'（服务端错误）{type(e).__name__}: {e}'
+        base_url = chat_target.get('base_url', 'unknown')
+        err = f'（服务端错误）无法连接 Ollama ({base_url}): {type(e).__name__}: {e}'
         yield helper_sse('delta', {'content': err})
         full_text = (full_text or '') + '\n' + err
 
