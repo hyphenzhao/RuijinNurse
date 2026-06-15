@@ -6,6 +6,7 @@ class SSEClient: NSObject {
     private var buffer = ""
     private var responseData = Data()  // Accumulate for error extraction
     private var accumulatedAnswer = "" // Fallback for done event
+    private var pendingEvent = ""       // Persist across buffer chunks
     var isStreaming: Bool { task != nil }
 
     var onThinking: ((String) -> Void)?
@@ -37,6 +38,7 @@ class SSEClient: NSObject {
         responseData = Data()
         buffer = ""
         accumulatedAnswer = ""
+        pendingEvent = ""
         task = session.dataTask(with: request)
         task?.resume()
     }
@@ -88,23 +90,19 @@ extension SSEClient: URLSessionDataDelegate {
         // Keep the last incomplete line in buffer
         buffer = lines.last ?? ""
 
-        var currentEvent = ""
-        var currentData = ""
-
         for i in 0..<(lines.count - 1) {
             let line = lines[i]
 
             if line.hasPrefix("event: ") {
-                currentEvent = String(line.dropFirst(7))
+                pendingEvent = String(line.dropFirst(7))
             } else if line.hasPrefix("data: ") {
-                currentData = String(line.dropFirst(6))
+                let data = String(line.dropFirst(6))
 
-                // We have both event and data — process
-                processSSEMessage(event: currentEvent, data: currentData)
+                // Use pendingEvent (persists across buffer chunks)
+                processSSEMessage(event: pendingEvent, data: data)
 
-                // Reset for next
-                currentEvent = ""
-                currentData = ""
+                // Reset for next SSE message
+                pendingEvent = ""
             }
         }
     }
