@@ -79,9 +79,38 @@ extension SSEClient: URLSessionDataDelegate {
             DispatchQueue.main.async { [weak self] in
                 self?.onError?(errorMsg)
             }
+        } else {
+            // Connection closed cleanly — flush any remaining data in buffer
+            flushBuffer()
         }
         DispatchQueue.main.async { [weak self] in
             self?.task = nil
+        }
+    }
+
+    /// Process any remaining data in the buffer when connection closes.
+    /// Handles the case where the final SSE event lacks a trailing \n\n.
+    private func flushBuffer() {
+        guard !buffer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+
+        // Force-process what's in the buffer as complete lines
+        let lines = buffer.components(separatedBy: "\n")
+        buffer = ""
+
+        for line in lines where !line.isEmpty {
+            if line.hasPrefix("event: ") {
+                pendingEvent = String(line.dropFirst(7))
+            } else if line.hasPrefix("data: ") {
+                let data = String(line.dropFirst(6))
+                processSSEMessage(event: pendingEvent, data: data)
+                pendingEvent = ""
+            }
+        }
+
+        // If pendingEvent was set but no data followed, treat as done
+        if pendingEvent == "done" {
+            processSSEMessage(event: "done", data: "{}")
+            pendingEvent = ""
         }
     }
 
