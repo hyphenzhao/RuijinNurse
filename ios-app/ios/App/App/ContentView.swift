@@ -294,15 +294,35 @@ struct UnityWebView: UIViewRepresentable {
         let config = WKWebViewConfiguration()
         config.allowsInlineMediaPlayback = true
         config.mediaTypesRequiringUserActionForPlayback = []
-        config.preferences.setValue(true, forKey: "allowFileAccessFromFileURLs")
 
         let prefs = WKWebpagePreferences()
         prefs.allowsContentJavaScript = true
         config.defaultWebpagePreferences = prefs
 
+        // Inject script to scale Unity canvas to fit narrow panels
+        let scaleScript = """
+        (function() {
+            var meta = document.createElement('meta');
+            meta.name = 'viewport';
+            meta.content = 'width=device-width, initial-scale=0.3, user-scalable=yes';
+            document.head.appendChild(meta);
+            var style = document.createElement('style');
+            style.textContent = '#unity-container{width:100%!important;overflow:hidden}' +
+                '#unity-canvas{max-width:100%!important;height:auto!important}' +
+                'body{margin:0;overflow:hidden}';
+            document.head.appendChild(style);
+        })();
+        """
+        let userScript = WKUserScript(source: scaleScript,
+                                       injectionTime: .atDocumentEnd,
+                                       forMainFrameOnly: true)
+        config.userContentController.addUserScript(userScript)
+
         let webView = WKWebView(frame: .zero, configuration: config)
         webView.navigationDelegate = context.coordinator
         webView.scrollView.isScrollEnabled = true
+        webView.scrollView.minimumZoomScale = 0.2
+        webView.scrollView.maximumZoomScale = 2.0
         webView.isOpaque = false
         webView.backgroundColor = .black
         webView.load(URLRequest(url: url))
