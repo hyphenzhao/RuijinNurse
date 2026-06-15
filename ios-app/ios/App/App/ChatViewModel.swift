@@ -34,7 +34,7 @@ class ChatViewModel: ObservableObject {
     @Published var isStreaming = false
     @Published var streamingThinking = ""
     @Published var streamingAnswer = ""
-    @Published var showIntroVideo = false  // Disabled — video file not present on server
+    @Published var showIntroVideo = true   // Show intro video on launch (matches web)
     @Published var autoReadEnabled = false  // Toggle for auto-read during streaming
 
     /// Set by AppDelegate — used for auto-reading responses after generation completes
@@ -56,10 +56,12 @@ class ChatViewModel: ObservableObject {
         self.needsSetup = savedURL == "http://localhost:8000" || !loggedIn
         setupSSECallbacks()
         if !needsSetup {
-            addSystemMessage("👋 欢迎回来")
+            // Show intro video (matches web version's 入院介绍视频)
+            showIntroVideo = true
+            // Welcome text (same as web: data-intro-welcome)
+            addSystemMessage("欢迎来到瑞金医院功能神外智能宣讲。请先观看入院介绍视频，如有问题可在下方输入提问。")
             Task {
                 await checkConnection()
-                // Load agents and models when returning with saved tokens
                 if connectionState == .connected {
                     async let _agents: () = loadAgents()
                     async let _models: () = loadModels()
