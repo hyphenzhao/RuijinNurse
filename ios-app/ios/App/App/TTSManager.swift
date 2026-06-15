@@ -4,7 +4,7 @@ import AVFoundation
 /// Manages text-to-speech via AVSpeechSynthesizer.
 /// Use as @EnvironmentObject in SwiftUI views.
 @MainActor
-class TTSManager: ObservableObject {
+class TTSManager: NSObject, ObservableObject {
     @Published var isSpeaking = false
     @Published var currentTextHash: Int = 0  // Track which message is being spoken
 
@@ -96,17 +96,13 @@ class TTSManager: ObservableObject {
 
 // MARK: - AVSpeechSynthesizerDelegate
 extension TTSManager: AVSpeechSynthesizerDelegate {
-    nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer,
-                                        didFinish utterance: AVSpeechUtterance) {
-        Task { @MainActor in
-            self.speakNextInQueue()
-        }
+    func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer,
+                           didFinish utterance: AVSpeechUtterance) {
+        speakNextInQueue()
     }
 
-    nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer,
-                                        didCancel utterance: AVSpeechUtterance) {
-        Task { @MainActor in
-            self.isSpeaking = false
-        }
+    func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer,
+                           didCancel utterance: AVSpeechUtterance) {
+        isSpeaking = false
     }
 }
