@@ -83,6 +83,44 @@ enum ConnectionState: Equatable {
     case error(String)
 }
 
+// MARK: - Token Refresh
+
+struct RefreshResponse: Codable {
+    let access: String
+}
+
+// MARK: - Settings
+
+struct SettingsResponse: Codable {
+    let ollamaHost: String
+    let ollamaPort: Int
+
+    enum CodingKeys: String, CodingKey {
+        case ollamaHost = "ollama_host"
+        case ollamaPort = "ollama_port"
+    }
+}
+
+struct ModelsListResponse: Codable {
+    let ok: Bool?
+    let models: [String]?
+    let choices: [ModelChoice]?
+    let error: String?
+}
+
+// MARK: - Media Item (for inline media cards in chat)
+
+struct MediaItem: Identifiable {
+    let id = UUID()
+    let label: String
+    let url: String
+    let type: MediaType
+
+    enum MediaType: String {
+        case video, image, pdf
+    }
+}
+
 // MARK: - SSE Event
 
 enum SSEEvent {

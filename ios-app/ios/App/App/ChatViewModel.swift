@@ -25,12 +25,16 @@ class ChatViewModel: ObservableObject {
     @Published var agents: [Agent] = []
     @Published var selectedModelKey: String = ""
     @Published var modelsLoaded = false
+    @Published var isLoadingAgents = false
+    @Published var availableModels: [ModelChoice] = []
+    @Published var defaultModelKey: String = "model:qwen3:4b"
 
     // MARK: - Chat
     @Published var messages: [ChatMessage] = []
     @Published var isStreaming = false
     @Published var streamingThinking = ""
     @Published var streamingAnswer = ""
+    @Published var showIntroVideo = true
 
     private let sseClient = SSEClient()
 
@@ -80,7 +84,9 @@ class ChatViewModel: ObservableObject {
             isLoggedIn = true
             username = resp.user?.username ?? user
             connectionState = .connected
-            await loadAgents()
+            async let _agents: () = loadAgents()
+            async let _models: () = loadModels()
+            _ = await (_agents, _models)
             addSystemMessage("✅ 登录成功，欢迎 \(username)")
             return nil
         } catch {
@@ -98,13 +104,18 @@ class ChatViewModel: ObservableObject {
         isLoggedIn = false
         username = ""
         agents = []
+        availableModels = []
+        selectedModelKey = ""
         needsSetup = true
         messages = []
+        showIntroVideo = true
         addSystemMessage("👋 已登出")
     }
 
-    // MARK: - Agents
+    // MARK: - Agents & Models
+
     func loadAgents() async {
+        isLoadingAgents = true
         do {
             let list: [Agent] = try await apiGet("/api/v1/agents/")
             agents = list.filter { $0.isActive ?? true }
@@ -118,12 +129,44 @@ class ChatViewModel: ObservableObject {
         } catch {
             addSystemMessage("⚠️ 加载智能体列表失败: \(error.localizedDescription)")
         }
+        isLoadingAgents = false
+    }
+
+    /// Fetch available Ollama models from the server configuration
+    func loadModels() async {
+        do {
+            // Get server Ollama config first
+            let settings: SettingsResponse = try await apiGet("/api/v1/settings/")
+            // Fetch available models from that Ollama instance
+            let resp: ModelsListResponse = try await apiGet(
+                "/api/v1/models/?host=\(settings.ollamaHost)&port=\(settings.ollamaPort)"
+            )
+            // Use server-provided choices (key/label pairs)
+            if let choices = resp.choices, !choices.isEmpty {
+                availableModels = choices
+                if agents.isEmpty {
+                    defaultModelKey = choices[0].key
+                }
+            } else if let models = resp.models, !models.isEmpty {
+                // Fallback: construct choices from model name list
+                availableModels = models.map { ModelChoice(key: "model:\($0)", label: $0) }
+                defaultModelKey = availableModels[0].key
+            }
+        } catch {
+            addSystemMessage("⚠️ 加载模型列表失败: \(error.localizedDescription)")
+        }
     }
 
     /// URL for the Unity WebGL content served by Django
     var unityWebGLURL: URL? {
         guard let base = URL(string: serverURL) else { return nil }
         return base.appendingPathComponent("static/promotions/unity/Build/index.html")
+    }
+
+    /// URL for the intro video served by Django
+    var introVideoURL: URL? {
+        guard let base = URL(string: serverURL) else { return nil }
+        return base.appendingPathComponent("static/promotions/hospital_notification.mp4")
     }
 
     // MARK: - Chat
@@ -140,8 +183,9 @@ class ChatViewModel: ObservableObject {
         isStreaming = true
         streamingThinking = ""
         streamingAnswer = ""
+        showIntroVideo = false  // Hide intro video after user starts chatting
 
-        let model = selectedModelKey.isEmpty ? "model:qwen3:4b" : selectedModelKey
+        let model = selectedModelKey.isEmpty ? defaultModelKey : selectedModelKey
         let body: [String: Any] = ["text": text, "model": model]
         guard let bodyData = try? JSONSerialization.data(withJSONObject: body) else { return }
 
@@ -206,8 +250,26 @@ class ChatViewModel: ObservableObject {
         return URLSession(configuration: config)
     }()
 
+    // MARK: - Token Refresh
+
+    /// Try to refresh the JWT access token. Returns true on success, false on failure (calls logout).
+    private func refreshTokenIfNeeded() async -> Bool {
+        guard let refresh = jwtRefresh else { return false }
+        do {
+            let body = try JSONEncoder().encode(["refresh": refresh])
+            let resp: RefreshResponse = try await apiPost("/api/v1/auth/refresh/", body: body, auth: false, isRetry: true)
+            jwtAccess = resp.access
+            Keychain.set(resp.access, forKey: "jwt_access")
+            return true
+        } catch {
+            await MainActor.run { logout() }
+            addSystemMessage("⚠️ 会话已过期，请重新登录")
+            return false
+        }
+    }
+
     // MARK: - API Helpers
-    private func apiGet<T: Decodable>(_ path: String, auth: Bool = true) async throws -> T {
+    private func apiGet<T: Decodable>(_ path: String, auth: Bool = true, isRetry: Bool = false) async throws -> T {
         var req = URLRequest(url: URL(string: "\(serverURL)\(path)")!)
         req.httpMethod = "GET"
         if auth, let token = jwtAccess {
@@ -215,11 +277,22 @@ class ChatViewModel: ObservableObject {
         }
         req.timeoutInterval = 10
         let (data, response) = try await urlSession.data(for: req)
+
+        // Auto-refresh token on 401 (only once to avoid infinite loops)
+        if let http = response as? HTTPURLResponse, http.statusCode == 401, auth, !isRetry {
+            let refreshed = await refreshTokenIfNeeded()
+            if refreshed {
+                return try await apiGet(path, auth: auth, isRetry: true)
+            }
+            throw NSError(domain: "API", code: 401,
+                userInfo: [NSLocalizedDescriptionKey: "会话已过期，请重新登录"])
+        }
+
         try checkHTTPStatus(response, data: data)
         return try JSONDecoder().decode(T.self, from: data)
     }
 
-    private func apiPost<T: Decodable>(_ path: String, body: Data, auth: Bool = true) async throws -> T {
+    private func apiPost<T: Decodable>(_ path: String, body: Data, auth: Bool = true, isRetry: Bool = false) async throws -> T {
         var req = URLRequest(url: URL(string: "\(serverURL)\(path)")!)
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -229,6 +302,17 @@ class ChatViewModel: ObservableObject {
         req.httpBody = body
         req.timeoutInterval = 10
         let (data, response) = try await urlSession.data(for: req)
+
+        // Auto-refresh token on 401 (only once to avoid infinite loops)
+        if let http = response as? HTTPURLResponse, http.statusCode == 401, auth, !isRetry {
+            let refreshed = await refreshTokenIfNeeded()
+            if refreshed {
+                return try await apiPost(path, body: body, auth: auth, isRetry: true)
+            }
+            throw NSError(domain: "API", code: 401,
+                userInfo: [NSLocalizedDescriptionKey: "会话已过期，请重新登录"])
+        }
+
         try checkHTTPStatus(response, data: data)
         return try JSONDecoder().decode(T.self, from: data)
     }

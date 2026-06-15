@@ -4,6 +4,7 @@ import Foundation
 class SSEClient: NSObject {
     private var task: URLSessionDataTask?
     private var buffer = ""
+    private var responseData = Data()  // Accumulate for error extraction
     var isStreaming: Bool { task != nil }
 
     var onThinking: ((String) -> Void)?
@@ -32,6 +33,8 @@ class SSEClient: NSObject {
             delegateQueue: nil
         )
 
+        responseData = Data()
+        buffer = ""
         task = session.dataTask(with: request)
         task?.resume()
     }
@@ -44,6 +47,7 @@ class SSEClient: NSObject {
 
 extension SSEClient: URLSessionDataDelegate {
     func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
+        responseData.append(data)
         guard let text = String(data: data, encoding: .utf8) else { return }
         buffer += text
         processBuffer()
@@ -55,8 +59,20 @@ extension SSEClient: URLSessionDataDelegate {
             if nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorCancelled {
                 return // intentional disconnect
             }
+
+            // Try to extract DRF error from response body
+            var errorMsg = error.localizedDescription
+            if let httpResponse = task.response as? HTTPURLResponse,
+               let json = try? JSONSerialization.jsonObject(with: responseData) as? [String: Any],
+               let detail = json["detail"] as? String {
+                errorMsg = detail
+            } else if let httpResponse = task.response as? HTTPURLResponse,
+                      httpResponse.statusCode >= 400 {
+                errorMsg = "服务器错误 \(httpResponse.statusCode)"
+            }
+
             DispatchQueue.main.async { [weak self] in
-                self?.onError?(error.localizedDescription)
+                self?.onError?(errorMsg)
             }
         }
         DispatchQueue.main.async { [weak self] in
