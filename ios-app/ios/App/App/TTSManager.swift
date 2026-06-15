@@ -90,8 +90,8 @@ class TTSManager: NSObject, ObservableObject {
                                              with: "$1", options: .regularExpression)
 
         // Remove heading markers (keep text)
-        result = result.replacingOccurrences(of: #"^#{1,6}\s+"#,
-                                             with: "", options: .regularExpression.union(.anchorsMatchLines))
+        result = result.replacingOccurrences(of: #"(?m)^#{1,6}\s+"#,
+                                             with: "", options: .regularExpression)
 
         // Remove table rows (lines with | that contain more than 2 pipes)
         let lines = result.components(separatedBy: "\n")
@@ -101,8 +101,8 @@ class TTSManager: NSObject, ObservableObject {
         }.joined(separator: "\n")
 
         // Remove separator lines (---, ***, ===)
-        result = result.replacingOccurrences(of: #"^[-*=_]{3,}\s*$"#,
-                                             with: "", options: .regularExpression.union(.anchorsMatchLines))
+        result = result.replacingOccurrences(of: #"(?m)^[-*=_]{3,}\s*$"#,
+                                             with: "", options: .regularExpression)
 
         return result
     }
