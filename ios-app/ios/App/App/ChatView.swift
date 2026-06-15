@@ -1,5 +1,6 @@
 import SwiftUI
 import AVKit
+import Speech
 
 // MARK: - Messages List
 
@@ -97,6 +98,7 @@ struct IntroVideoView: View {
 
 struct MessageBubbleView: View {
     let message: ChatMessage
+    @EnvironmentObject var ttsManager: TTSManager
 
     /// Compute media items once — avoids inline `let` issues in ViewBuilder
     private var mediaItems: [MediaItem] {
@@ -122,6 +124,26 @@ struct MessageBubbleView: View {
                             .padding(10)
                             .background(bubbleColor)
                             .cornerRadius(12)
+
+                        // Read-aloud button
+                        HStack {
+                            Spacer()
+                            Button(action: { ttsManager.speak(message.content, messageId: message.id.hashValue) }) {
+                                HStack(spacing: 4) {
+                                    Image(systemName: ttsManager.isSpeaking && ttsManager.currentTextHash == message.id.hashValue
+                                          ? "stop.circle.fill" : "speaker.wave.2")
+                                        .font(.caption)
+                                    Text(ttsManager.isSpeaking && ttsManager.currentTextHash == message.id.hashValue
+                                         ? "停止" : "朗读")
+                                        .font(.caption)
+                                }
+                                .foregroundColor(.blue)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        .padding(.top, 2)
 
                         // Inline media cards
                         if !mediaItems.isEmpty {
@@ -431,17 +453,32 @@ struct ChatInputView: View {
     @EnvironmentObject var vm: ChatViewModel
     @State private var inputText = ""
     @FocusState private var isFocused: Bool
+    @StateObject private var speechRecognizer = SpeechRecognizer()
 
     var body: some View {
         HStack(alignment: .bottom, spacing: 8) {
-            TextField("输入您的问题...", text: $inputText, axis: .vertical)
+            // Microphone button for voice input
+            Button(action: toggleMic) {
+                Image(systemName: speechRecognizer.isRecording ? "mic.fill" : "mic")
+                    .foregroundColor(speechRecognizer.isRecording ? .red : .secondary)
+                    .padding(10)
+                    .background(
+                        Circle()
+                            .fill(speechRecognizer.isRecording ? Color.red.opacity(0.15) : Color(.systemGray6))
+                    )
+                    .scaleEffect(speechRecognizer.isRecording ? 1.2 : 1.0)
+                    .animation(.easeInOut(duration: 0.3).repeatForever(autoreverses: true), value: speechRecognizer.isRecording)
+            }
+            .disabled(!vm.isLoggedIn || !speechRecognizer.isAuthorized)
+
+            TextField(speechRecognizer.isRecording ? "正在聆听..." : "输入您的问题...", text: $inputText, axis: .vertical)
                 .textFieldStyle(.plain)
                 .padding(10)
                 .background(Color(.systemGray6))
                 .cornerRadius(10)
                 .focused($isFocused)
                 .lineLimit(1...5)
-                .disabled(!vm.isLoggedIn)
+                .disabled(!vm.isLoggedIn || speechRecognizer.isRecording)
 
             if vm.isStreaming {
                 Button(action: { vm.stopGeneration() }) {
@@ -465,9 +502,30 @@ struct ChatInputView: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
         .background(Color(.systemBackground))
+        .onAppear {
+            Task { await speechRecognizer.requestAuthorization() }
+        }
+    }
+
+    private func toggleMic() {
+        if speechRecognizer.isRecording {
+            speechRecognizer.stopRecording()
+            inputText = speechRecognizer.recognizedText.trimmingCharacters(in: .whitespacesAndNewlines)
+        } else {
+            do {
+                try speechRecognizer.startRecording()
+            } catch {
+                print("[ChatInputView] Mic error: \(error.localizedDescription)")
+            }
+        }
     }
 
     private func sendAction() {
+        // Stop recording if active
+        if speechRecognizer.isRecording {
+            speechRecognizer.stopRecording()
+            inputText = speechRecognizer.recognizedText.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
         let text = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
         vm.sendMessage(text)
