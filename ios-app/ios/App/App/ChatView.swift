@@ -175,48 +175,15 @@ struct MessageBubbleView: View {
 struct MarkdownContentView: View {
     let content: String
 
-    /// Preprocess AI response for markdown: convert single \n to double \n\n
-    /// so line breaks are preserved, while keeping markdown syntax intact.
-    private var preprocessed: String {
-        // Replace \n\n\n+ with double newline (collapse excessive blank lines)
-        var text = content.replacingOccurrences(of: "\n{3,}", with: "\n\n", options: .regularExpression)
-        // Avoid doubling newlines that are already part of markdown blocks
-        // (headings, list items, code blocks need single \n before them)
-        // Simple approach: double newlines between non-empty lines
-        let lines = text.components(separatedBy: "\n")
-        var result: [String] = []
-        for line in lines {
-            let trimmed = line.trimmingCharacters(in: .whitespaces)
-            // Don't double empty lines; preserve markdown syntax starters
-            if trimmed.isEmpty || trimmed.hasPrefix("#") || trimmed.hasPrefix("-") ||
-               trimmed.hasPrefix("*") || trimmed.hasPrefix("```") || trimmed.hasPrefix(">") ||
-               trimmed.hasPrefix("1.") || trimmed.hasPrefix("|") {
-                result.append(line)
-            } else {
-                // Add double newline to create paragraph break
-                if !result.isEmpty, !result[result.count - 1].isEmpty {
-                    result.append("")
-                }
-                result.append(line)
-            }
-        }
-        return result.joined(separator: "\n")
-    }
-
     private var attributedContent: AttributedString {
         if #available(iOS 15.0, *) {
-            do {
-                return try AttributedString(
-                    markdown: preprocessed,
-                    options: AttributedString.MarkdownParsingOptions(interpretedSyntax: .full)
-                )
-            } catch {
-                if let md = try? AttributedString(
-                    markdown: preprocessed,
-                    options: AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace)
-                ) {
-                    return md
-                }
+            // inlineOnlyPreservingWhitespace: renders **bold**, *italic*, `code`,
+            // [links](url) while PRESERVING line breaks — no preprocessing needed
+            if let md = try? AttributedString(
+                markdown: content,
+                options: AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace)
+            ) {
+                return md
             }
         }
         return AttributedString(content)
