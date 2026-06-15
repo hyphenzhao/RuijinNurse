@@ -4,6 +4,26 @@ from django.shortcuts import redirect
 from django.urls import resolve
 import re
 
+
+class UnitySharedArrayBufferMiddleware:
+    """
+    Add COOP/COEP headers for Unity WebGL static files.
+    Unity WebGL requires SharedArrayBuffer, which browsers only expose
+    when these headers are present. Without them, the canvas stays black.
+    """
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        response = self.get_response(request)
+        # Apply to Unity WebGL build files
+        if '/unity/' in request.path:
+            response['Cross-Origin-Opener-Policy'] = 'same-origin'
+            response['Cross-Origin-Embedder-Policy'] = 'require-corp'
+        return response
+
+
 class LoginRequiredMiddleware:
     """
     Redirects ALL anonymous users to LOGIN_URL,
