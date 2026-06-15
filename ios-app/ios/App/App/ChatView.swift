@@ -175,13 +175,20 @@ struct MessageBubbleView: View {
 struct MarkdownContentView: View {
     let content: String
 
+    /// Minimal preprocessing: replace \n with "  \n" (two spaces + newline)
+    /// This creates hard line breaks in standard markdown while keeping
+    /// block syntax (tables |, headings #, lists -, code blocks ```) intact.
+    /// Simple string replacement — no regex, no line analysis, no garbled text risk.
+    private var preprocessed: String {
+        content.replacingOccurrences(of: "\n", with: "  \n")
+    }
+
     private var attributedContent: AttributedString {
         if #available(iOS 15.0, *) {
-            // inlineOnlyPreservingWhitespace: renders **bold**, *italic*, `code`,
-            // [links](url) while PRESERVING line breaks — no preprocessing needed
+            // .full renders tables, headings, lists, code blocks, bold, italic, links
             if let md = try? AttributedString(
-                markdown: content,
-                options: AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace)
+                markdown: preprocessed,
+                options: AttributedString.MarkdownParsingOptions(interpretedSyntax: .full)
             ) {
                 return md
             }
@@ -366,26 +373,29 @@ struct MediaCardView: View {
 
 // MARK: - Media Detection
 
-/// Find embedded media URLs (video, image, PDF) in text content
+/// Find embedded media URLs (video, image, PDF) in text content.
+/// Matches bare URLs and URLs inside markdown links: [text](url)
 func findEmbeddedMedia(in text: String) -> [MediaItem] {
     var items: [MediaItem] = []
     var seen = Set<String>()
-    // Matches URLs ending with media extensions
-    let pattern = #"https?://[^\s<>"']+?\.(mp4|png|jpe?g|gif|webp|pdf)\b"#
+    // Match http(s)://... ending with media extensions, optionally inside markdown link syntax
+    let pattern = #"https?://[^\s<>"')\]]+?\.(mp4|png|jpe?g|gif|webp|pdf)(\?\S*)?"#
     guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else { return [] }
 
     let nsText = text as NSString
     let matches = regex.matches(in: text, range: NSRange(location: 0, length: nsText.length))
 
     for match in matches {
-        let url = nsText.substring(with: match.range)
+        var url = nsText.substring(with: match.range)
+        // Strip trailing markdown/HTML artifacts
+        url = url.trimmingCharacters(in: CharacterSet(charactersIn: ").\"'<>"))
         guard !seen.contains(url) else { continue }
         seen.insert(url)
 
         let ext = (url as NSString).pathExtension.lowercased()
         let type: MediaItem.MediaType = {
             switch ext {
-            case "mp4": return .video
+            case "mp4", "mov", "m4v": return .video
             case "pdf": return .pdf
             default: return .image
             }
