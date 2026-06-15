@@ -140,6 +140,7 @@ LOGIN_EXEMPT_URLS = [
     r'static/.*',         # only if you insist on public static files
     r'api/v1/auth/login/?',    # JWT login endpoint
     r'api/v1/auth/refresh/?',  # JWT token refresh
+    r'api/v1/health/?',        # health check for mobile app — no auth required
 ]
 
 WHISPER_HOST = os.environ.get('WHISPER_HOST', '127.0.0.1')
