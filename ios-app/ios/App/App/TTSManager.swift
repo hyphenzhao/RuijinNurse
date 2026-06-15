@@ -17,31 +17,45 @@ class TTSManager: NSObject, ObservableObject {
         synthesizer.delegate = self
     }
 
-    /// Speak the given text aloud using a Chinese voice.
-    /// Automatically splits by Chinese sentence boundaries for natural pacing.
+    /// Speak the given text aloud. Stops any existing speech first.
+    /// For manual "朗读" button — tapping again stops; tapping different message replaces.
     func speak(_ text: String, messageId: Int = 0) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
 
-        // If already speaking the SAME message, stop it
-        if isSpeaking && currentTextHash == messageId {
+        // Toggle: tapping same message again stops it
+        if isSpeaking && currentQueueHash == messageId {
             stop()
             return
         }
 
-        // If speaking something else, stop and replace
+        // Replace any existing speech
         if isSpeaking {
             synthesizer.stopSpeaking(at: .immediate)
             utteranceQueue.removeAll()
         }
 
-        // Split into sentences for natural pacing
         let sentences = splitChineseSentences(trimmed)
         utteranceQueue = sentences
-        currentTextHash = messageId
         currentQueueHash = messageId
+        currentTextHash = messageId
 
         speakNextInQueue()
+    }
+
+    /// Append text to the speech queue WITHOUT interrupting current speech.
+    /// Used for auto-read during streaming — new sentences are queued sequentially.
+    func appendSpeech(_ text: String) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+
+        let sentences = splitChineseSentences(trimmed)
+        utteranceQueue.append(contentsOf: sentences)
+
+        // Start speaking if idle
+        if !synthesizer.isSpeaking && !utteranceQueue.isEmpty {
+            speakNextInQueue()
+        }
     }
 
     /// Stop all speech immediately

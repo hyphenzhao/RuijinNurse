@@ -235,16 +235,14 @@ class ChatViewModel: ObservableObject {
             guard let self = self else { return }
             self.streamingAnswer += text
 
-            // Auto-read: speak newly completed sentences as they stream in
+            // Auto-read: queue newly completed sentences without interrupting
             if self.autoReadEnabled, let tts = self.ttsManager {
                 let full = self.streamingAnswer
-                // Find complete sentences (ending with 。！？\n) since last spoke
                 let newText = String(full.dropFirst(self.lastSpokenLength))
                 let sentences = self.extractCompleteSentences(newText)
                 for s in sentences {
-                    tts.speak(s)
+                    tts.appendSpeech(s)  // Queues silently, doesn't interrupt
                 }
-                // Update spoke position (track by sentence boundary to avoid mid-char cuts)
                 if let lastBoundary = full.lastIndex(where: { "。！？\n；".contains($0) }) {
                     self.lastSpokenLength = full.distance(from: full.startIndex, to: lastBoundary) + 1
                 }
@@ -262,7 +260,7 @@ class ChatViewModel: ObservableObject {
             if self.autoReadEnabled, let tts = self.ttsManager {
                 let remaining = String(content.dropFirst(self.lastSpokenLength)).trimmingCharacters(in: .whitespacesAndNewlines)
                 if !remaining.isEmpty {
-                    tts.speak(remaining)
+                    tts.appendSpeech(remaining)
                 }
             }
 
