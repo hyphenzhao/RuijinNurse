@@ -1,4 +1,5 @@
 import SwiftUI
+import AVKit
 
 // MARK: - Messages List
 
@@ -9,6 +10,12 @@ struct ChatMessagesView: View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 8) {
+                    // Intro video on first session
+                    if vm.showIntroVideo, let introURL = vm.introVideoURL {
+                        IntroVideoView(videoURL: introURL)
+                            .id("intro")
+                    }
+
                     ForEach(vm.messages) { msg in
                         MessageBubbleView(message: msg)
                             .id(msg.id)
@@ -50,6 +57,42 @@ struct ChatMessagesView: View {
     }
 }
 
+// MARK: - Intro Video
+
+struct IntroVideoView: View {
+    let videoURL: URL
+    @State private var player = AVPlayer()
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 4) {
+                Text("🤖").font(.title3)
+                Text("📺 入院介绍视频")
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+            }
+
+            VideoPlayer(player: player)
+                .frame(height: 220)
+                .cornerRadius(12)
+
+            Text("欢迎来到瑞金医院功能神外智能宣讲。请先观看入院介绍视频，如有问题可在下方输入提问。")
+                .font(.caption)
+                .foregroundColor(.secondary)
+        }
+        .padding(12)
+        .background(Color(.systemBackground))
+        .cornerRadius(12)
+        .onAppear {
+            player = AVPlayer(url: videoURL)
+            player.play()
+        }
+        .onDisappear {
+            player.pause()
+        }
+    }
+}
+
 // MARK: - Message Bubble
 
 struct MessageBubbleView: View {
@@ -62,22 +105,33 @@ struct MessageBubbleView: View {
             }
 
             VStack(alignment: message.role == .user ? .trailing : .leading, spacing: 4) {
+                // Collapsible thinking section
                 if let think = message.thinking, !think.isEmpty {
-                    Text(think)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .italic()
-                        .padding(8)
-                        .background(Color(.systemGray6))
-                        .cornerRadius(8)
+                    ThinkingBubbleView(content: think)
                 }
+
                 if !message.content.isEmpty {
-                    Text(message.content)
-                        .font(.subheadline)
-                        .padding(10)
-                        .background(bubbleColor)
-                        .cornerRadius(12)
-                        .textSelection(.enabled)
+                    if message.role == .assistant {
+                        MarkdownContentView(content: message.content)
+                            .padding(10)
+                            .background(bubbleColor)
+                            .cornerRadius(12)
+                    } else {
+                        Text(message.content)
+                            .font(.subheadline)
+                            .padding(10)
+                            .background(bubbleColor)
+                            .cornerRadius(12)
+                            .textSelection(.enabled)
+                    }
+
+                    // Inline media cards for AI responses
+                    if message.role == .assistant {
+                        let items = findEmbeddedMedia(in: message.content)
+                        ForEach(items) { item in
+                            MediaCardView(item: item)
+                        }
+                    }
                 }
             }
             .frame(maxWidth: message.role == .user ? 280 : .infinity, alignment: message.role == .user ? .trailing : .leading)
@@ -116,11 +170,67 @@ struct MessageBubbleView: View {
     }
 }
 
+// MARK: - Markdown Content (iOS 15+ native)
+
+struct MarkdownContentView: View {
+    let content: String
+
+    var body: some View {
+        if #available(iOS 15.0, *) {
+            Text(try? AttributedString(markdown: content,
+                   options: AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace)))
+                ?? AttributedString(content)
+        } else {
+            Text(content)
+        }
+        .font(.subheadline)
+        .textSelection(.enabled)
+    }
+}
+
+// MARK: - Thinking Bubble (expand/collapse)
+
+struct ThinkingBubbleView: View {
+    let content: String
+    @State private var expanded = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Button(action: { withAnimation(.easeInOut(duration: 0.2)) { expanded.toggle() } }) {
+                HStack(spacing: 4) {
+                    Text("💭 思考过程")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    Spacer()
+                    Image(systemName: expanded ? "chevron.up" : "chevron.down")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
+            }
+            .buttonStyle(.plain)
+
+            if expanded {
+                Text(content)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .italic()
+                    .padding(8)
+                    .background(Color(.systemGray6))
+                    .cornerRadius(8)
+            }
+        }
+        .padding(8)
+        .background(Color(.systemGray6).opacity(0.5))
+        .cornerRadius(8)
+    }
+}
+
 // MARK: - Streaming Bubble (dots animation)
 
 struct StreamingBubbleView: View {
     let thinking: String
     let answer: String
+    @State private var thinkingExpanded = true  // Auto-expand during streaming
 
     var body: some View {
         HStack(alignment: .top, spacing: 4) {
@@ -128,14 +238,35 @@ struct StreamingBubbleView: View {
 
             VStack(alignment: .leading, spacing: 4) {
                 if !thinking.isEmpty {
-                    Text(thinking)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .italic()
-                        .padding(8)
-                        .background(Color(.systemGray6))
-                        .cornerRadius(8)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Button(action: { withAnimation(.easeInOut(duration: 0.2)) { thinkingExpanded.toggle() } }) {
+                            HStack(spacing: 4) {
+                                Text("💭 思考中...")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                Spacer()
+                                Image(systemName: thinkingExpanded ? "chevron.up" : "chevron.down")
+                                    .font(.caption2)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                        .buttonStyle(.plain)
+
+                        if thinkingExpanded {
+                            Text(thinking)
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                                .italic()
+                                .padding(8)
+                                .background(Color(.systemGray6))
+                                .cornerRadius(8)
+                        }
+                    }
+                    .padding(8)
+                    .background(Color(.systemGray6).opacity(0.5))
+                    .cornerRadius(8)
                 }
+
                 if answer.isEmpty && thinking.isEmpty {
                     HStack(spacing: 3) {
                         ForEach(0..<3) { i in
@@ -149,12 +280,10 @@ struct StreamingBubbleView: View {
                     .background(Color(.systemBackground))
                     .cornerRadius(12)
                 } else if !answer.isEmpty {
-                    Text(answer)
-                        .font(.subheadline)
+                    MarkdownContentView(content: answer)
                         .padding(10)
                         .background(Color(.systemBackground))
                         .cornerRadius(12)
-                        .textSelection(.enabled)
                 } else {
                     Text("思考中...")
                         .font(.caption)
@@ -168,6 +297,95 @@ struct StreamingBubbleView: View {
             Spacer(minLength: 40)
         }
     }
+}
+
+// MARK: - Media Card
+
+struct MediaCardView: View {
+    let item: MediaItem
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 4) {
+                Image(systemName: item.type == .video ? "play.rectangle" : (item.type == .image ? "photo" : "doc"))
+                    .font(.caption)
+                    .foregroundColor(.blue)
+                Text(item.type == .video ? "视频资料" : (item.type == .image ? "图片资料" : "PDF 文档"))
+                    .font(.caption)
+                    .foregroundColor(.blue)
+                    .fontWeight(.medium)
+            }
+
+            if item.type == .video, let url = URL(string: item.url) {
+                VideoPlayer(player: AVPlayer(url: url))
+                    .frame(height: 180)
+                    .cornerRadius(8)
+            } else if item.type == .image, let url = URL(string: item.url) {
+                AsyncImage(url: url) { phase in
+                    switch phase {
+                    case .success(let image):
+                        image.resizable().scaledToFit()
+                            .frame(maxHeight: 200)
+                            .cornerRadius(8)
+                    case .failure:
+                        Text("图片加载失败")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    default:
+                        ProgressView()
+                    }
+                }
+            } else {
+                Button(action: {
+                    if let url = URL(string: item.url) {
+                        UIApplication.shared.open(url)
+                    }
+                }) {
+                    Label("在新窗口打开: \(item.label)", systemImage: "arrow.up.forward.app")
+                        .font(.caption)
+                }
+            }
+        }
+        .padding(10)
+        .background(Color.blue.opacity(0.04))
+        .cornerRadius(10)
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(Color.blue.opacity(0.15), lineWidth: 1)
+        )
+    }
+}
+
+// MARK: - Media Detection
+
+/// Find embedded media URLs (video, image, PDF) in text content
+func findEmbeddedMedia(in text: String) -> [MediaItem] {
+    var items: [MediaItem] = []
+    var seen = Set<String>()
+    // Matches URLs ending with media extensions
+    let pattern = #"https?://[^\s<>"']+?\.(mp4|png|jpe?g|gif|webp|pdf)\b"#
+    guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else { return [] }
+
+    let nsText = text as NSString
+    let matches = regex.matches(in: text, range: NSRange(location: 0, length: nsText.length))
+
+    for match in matches {
+        let url = nsText.substring(with: match.range)
+        guard !seen.contains(url) else { continue }
+        seen.insert(url)
+
+        let ext = (url as NSString).pathExtension.lowercased()
+        let type: MediaItem.MediaType = {
+            switch ext {
+            case "mp4": return .video
+            case "pdf": return .pdf
+            default: return .image
+            }
+        }()
+        let label = (url as NSString).lastPathComponent
+        items.append(MediaItem(label: label, url: url, type: type))
+    }
+    return items
 }
 
 // MARK: - Chat Input
