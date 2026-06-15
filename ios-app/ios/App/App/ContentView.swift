@@ -21,7 +21,7 @@ struct ContentView: View {
     var mainView: some View {
         NavigationSplitView {
             AgentListView()
-                .frame(minWidth: 180, idealWidth: 220, maxWidth: 260)
+                .navigationSplitViewColumnWidth(210)
         } content: {
             VStack(spacing: 0) {
                 // Top bar with controls (more reliable than toolbar in SplitView)
@@ -68,12 +68,10 @@ struct ContentView: View {
                 ChatMessagesView()
                 ChatInputView()
             }
-            .navigationSplitViewColumnWidth(min: 320, ideal: 480)
         } detail: {
             mediaPanel
-                .frame(maxWidth: 240)
+                .navigationSplitViewColumnWidth(160)
         }
-        .navigationSplitViewStyle(.balanced)
         .navigationTitle("")
         .sheet(isPresented: $showConfig) {
             ServerConfigView()
