@@ -125,6 +125,14 @@ class TTSManager: NSObject, ObservableObject {
             return
         }
 
+        // Ensure playback audio session (release any .record session from STT)
+        do {
+            try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default)
+            try AVAudioSession.sharedInstance().setActive(true)
+        } catch {
+            print("[TTSManager] Audio session error: \(error)")
+        }
+
         let sentence = utteranceQueue.removeFirst()
         let utterance = AVSpeechUtterance(string: sentence)
         utterance.voice = AVSpeechSynthesisVoice(language: "zh-CN")

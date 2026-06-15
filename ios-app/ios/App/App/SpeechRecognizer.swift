@@ -125,16 +125,21 @@ class SpeechRecognizer: ObservableObject {
 
     /// Stop recording — recognized text is available in recognizedText
     func stopRecording() {
-        audioEngine.stop()
-        audioEngine.inputNode.removeTap(onBus: 0)
-        recognitionRequest?.endAudio()
-        recognitionTask?.finish()
+        recognitionTask?.cancel()
         recognitionTask = nil
+        recognitionRequest?.endAudio()
         recognitionRequest = nil
+        audioEngine.inputNode.removeTap(onBus: 0)
+        audioEngine.stop()
+
         isRecording = false
 
-        // Deactivate audio session
-        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        // Release audio session so TTS can take over
+        do {
+            try AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        } catch {
+            print("[SpeechRecognizer] Audio session deactivate error: \(error)")
+        }
         print("[SpeechRecognizer] Recording stopped. Text: \(recognizedText)")
     }
 }
