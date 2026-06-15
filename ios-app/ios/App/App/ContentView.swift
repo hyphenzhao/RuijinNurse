@@ -21,7 +21,7 @@ struct ContentView: View {
     var mainView: some View {
         NavigationSplitView {
             AgentListView()
-                .navigationSplitViewColumnWidth(min: 180, ideal: 220)
+                .frame(minWidth: 180, idealWidth: 220, maxWidth: 260)
         } content: {
             VStack(spacing: 0) {
                 // Top bar with controls (more reliable than toolbar in SplitView)
@@ -71,7 +71,7 @@ struct ContentView: View {
             .navigationSplitViewColumnWidth(min: 320, ideal: 480)
         } detail: {
             mediaPanel
-                .navigationSplitViewColumnWidth(min: 160, ideal: 200)
+                .frame(maxWidth: 240)
         }
         .navigationSplitViewStyle(.balanced)
         .navigationTitle("")
