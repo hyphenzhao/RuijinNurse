@@ -41,7 +41,8 @@ struct Agent: Identifiable, Codable {
     }
 }
 
-struct ModelChoice: Codable {
+struct ModelChoice: Codable, Identifiable {
+    var id: String { key }
     let key: String
     let label: String
 }
