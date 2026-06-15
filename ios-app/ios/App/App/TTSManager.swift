@@ -18,9 +18,9 @@ class TTSManager: NSObject, ObservableObject {
     }
 
     /// Speak the given text aloud. Stops any existing speech first.
-    /// For manual "朗读" button — tapping again stops; tapping different message replaces.
+    /// Strips markdown formatting before speaking so URLs and syntax aren't read aloud.
     func speak(_ text: String, messageId: Int = 0) {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmed = stripMarkdown(text).trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
 
         // Toggle: tapping same message again stops it
@@ -44,9 +44,9 @@ class TTSManager: NSObject, ObservableObject {
     }
 
     /// Append text to the speech queue WITHOUT interrupting current speech.
-    /// Used for auto-read during streaming — new sentences are queued sequentially.
+    /// Strips markdown before speaking.
     func appendSpeech(_ text: String) {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmed = stripMarkdown(text).trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
 
         let sentences = splitChineseSentences(trimmed)
@@ -56,6 +56,55 @@ class TTSManager: NSObject, ObservableObject {
         if !synthesizer.isSpeaking && !utteranceQueue.isEmpty {
             speakNextInQueue()
         }
+    }
+
+    /// Strip markdown formatting for clean TTS reading:
+    /// - [link text](url) → link text
+    /// - ![image](url) → removed
+    /// - **bold** → bold, *italic* → italic
+    /// - `code` → code
+    /// - Bare URLs → removed
+    /// - # headings → plain text
+    /// - | tables | → removed (unreadable)
+    private func stripMarkdown(_ text: String) -> String {
+        var result = text
+
+        // Remove images: ![alt](url)
+        result = result.replacingOccurrences(of: #"!\[[^\]]*\]\([^)]*\)"#,
+                                             with: "", options: .regularExpression)
+
+        // Replace links with just the text: [text](url) → text
+        result = result.replacingOccurrences(of: #"\[([^\]]*)\]\([^)]*\)"#,
+                                             with: "$1", options: .regularExpression)
+
+        // Remove bare URLs
+        result = result.replacingOccurrences(of: #"https?://[^\s<>"')\]]+"#,
+                                             with: "", options: .regularExpression)
+
+        // Remove markdown formatting markers (keep the text inside)
+        result = result.replacingOccurrences(of: #"\*\*([^*]+)\*\*"#,
+                                             with: "$1", options: .regularExpression)
+        result = result.replacingOccurrences(of: #"\*([^*]+)\*"#,
+                                             with: "$1", options: .regularExpression)
+        result = result.replacingOccurrences(of: #"`([^`]+)`"#,
+                                             with: "$1", options: .regularExpression)
+
+        // Remove heading markers (keep text)
+        result = result.replacingOccurrences(of: #"^#{1,6}\s+"#,
+                                             with: "", options: .regularExpression.union(.anchorsMatchLines))
+
+        // Remove table rows (lines with | that contain more than 2 pipes)
+        let lines = result.components(separatedBy: "\n")
+        result = lines.filter { line in
+            let pipes = line.components(separatedBy: "|").count - 1
+            return pipes < 2
+        }.joined(separator: "\n")
+
+        // Remove separator lines (---, ***, ===)
+        result = result.replacingOccurrences(of: #"^[-*=_]{3,}\s*$"#,
+                                             with: "", options: .regularExpression.union(.anchorsMatchLines))
+
+        return result
     }
 
     /// Stop all speech immediately
