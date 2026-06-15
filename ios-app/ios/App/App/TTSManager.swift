@@ -12,7 +12,8 @@ class TTSManager: NSObject, ObservableObject {
     private var utteranceQueue: [String] = []
     private var currentQueueHash: Int = 0
 
-    init() {
+    override init() {
+        super.init()
         synthesizer.delegate = self
     }
 
