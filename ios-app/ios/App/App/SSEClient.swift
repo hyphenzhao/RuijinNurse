@@ -7,6 +7,7 @@ class SSEClient: NSObject {
     private var responseData = Data()  // Accumulate for error extraction
     private var accumulatedAnswer = "" // Fallback for done event
     private var pendingEvent = ""       // Persist across buffer chunks
+    private var doneReceived = false     // Track if done event was processed
     var isStreaming: Bool { task != nil }
 
     var onThinking: ((String) -> Void)?
@@ -39,6 +40,7 @@ class SSEClient: NSObject {
         buffer = ""
         accumulatedAnswer = ""
         pendingEvent = ""
+        doneReceived = false
         task = session.dataTask(with: request)
         task?.resume()
     }
@@ -82,6 +84,12 @@ extension SSEClient: URLSessionDataDelegate {
         } else {
             // Connection closed cleanly — flush any remaining data in buffer
             flushBuffer()
+            // Fallback: if done event was never received, force-complete with accumulated text
+            if !doneReceived {
+                DispatchQueue.main.async { [weak self] in
+                    self?.onDone?(self?.accumulatedAnswer ?? "")
+                }
+            }
         }
         DispatchQueue.main.async { [weak self] in
             self?.task = nil
@@ -140,6 +148,7 @@ extension SSEClient: URLSessionDataDelegate {
         // Handle "done" event specially — always trigger completion,
         // even if JSON is malformed (e.g. split across network chunks)
         if event == "done" {
+            doneReceived = true
             var final = ""
             if let jsonData = data.data(using: .utf8),
                let dict = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any] {
