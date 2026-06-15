@@ -98,6 +98,12 @@ struct IntroVideoView: View {
 struct MessageBubbleView: View {
     let message: ChatMessage
 
+    /// Compute media items once — avoids inline `let` issues in ViewBuilder
+    private var mediaItems: [MediaItem] {
+        guard message.role == .assistant else { return [] }
+        return findEmbeddedMedia(in: message.content)
+    }
+
     var body: some View {
         HStack(alignment: .top, spacing: 4) {
             if message.role == .assistant || message.role == .system {
@@ -116,6 +122,13 @@ struct MessageBubbleView: View {
                             .padding(10)
                             .background(bubbleColor)
                             .cornerRadius(12)
+
+                        // Inline media cards
+                        if !mediaItems.isEmpty {
+                            ForEach(mediaItems) { item in
+                                MediaCardView(item: item)
+                            }
+                        }
                     } else {
                         Text(message.content)
                             .font(.subheadline)
@@ -123,14 +136,6 @@ struct MessageBubbleView: View {
                             .background(bubbleColor)
                             .cornerRadius(12)
                             .textSelection(.enabled)
-                    }
-
-                    // Inline media cards for AI responses
-                    if message.role == .assistant {
-                        let items = findEmbeddedMedia(in: message.content)
-                        ForEach(items) { item in
-                            MediaCardView(item: item)
-                        }
                     }
                 }
             }
