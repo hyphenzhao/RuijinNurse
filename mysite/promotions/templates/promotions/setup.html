@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+{% load dict_filters %}<!DOCTYPE html>
 <html lang="zh">
 <head>
     <meta charset="UTF-8">
@@ -6,923 +6,1071 @@
     <title>系统管理</title>
     <style>
         :root {
-            --bg: #f6f8fb;
-            --card: #ffffff;
-            --border: #d9e0ea;
-            --text: #1f2937;
-            --muted: #6b7280;
-            --primary: #2563eb;
-            --primary-dark: #1d4ed8;
-            --success: #059669;
-            --danger: #dc2626;
+            --bg: #f6f8fb; --card: #ffffff; --border: #d9e0ea;
+            --text: #1f2937; --muted: #6b7280;
+            --primary: #2563eb; --primary-dark: #1d4ed8;
+            --success: #059669; --danger: #dc2626; --warning: #d97706;
         }
-
         * { box-sizing: border-box; }
-        body {
-            margin: 0;
-            font-family: Arial, "Microsoft YaHei", sans-serif;
-            background: var(--bg);
-            color: var(--text);
-        }
-
-        .page {
-            max-width: 1200px;
-            margin: 24px auto;
-            padding: 0 16px 24px;
-        }
-
-        .page-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            gap: 12px;
-            margin-bottom: 20px;
-        }
-
-        .page-header h1 {
-            margin: 0;
-            font-size: 28px;
-        }
-
-        .back-link {
-            color: var(--primary);
-            text-decoration: none;
-            font-size: 14px;
-        }
-
-        .section {
-            margin-bottom: 20px;
-            border: 1px solid var(--border);
-            padding: 18px;
-            border-radius: 12px;
-            background: var(--card);
-            box-shadow: 0 4px 14px rgba(0, 0, 0, 0.04);
-        }
-
-        .section-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            gap: 12px;
-            flex-wrap: wrap;
-            margin-bottom: 12px;
-        }
-
-        .section h2, .section h3 {
-            margin: 0;
-        }
-
-        .hint {
-            font-size: 13px;
-            color: var(--muted);
-            margin: 8px 0 0;
-            line-height: 1.5;
-        }
-
-        .message-success {
-            color: var(--success);
-            font-size: 13px;
-            margin: 10px 0;
-        }
-
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-top: 10px;
-            background: white;
-        }
-
-        th, td {
-            border: 1px solid #e5e7eb;
-            padding: 10px 12px;
-            font-size: 14px;
-            text-align: left;
-            vertical-align: top;
-        }
-
-        th {
-            background: #f3f4f6;
-        }
-
-        .button-row {
-            display: flex;
-            gap: 8px;
-            flex-wrap: wrap;
-            align-items: center;
-        }
-
-        button, .btn {
-            appearance: none;
-            border: 0;
-            border-radius: 8px;
-            padding: 9px 14px;
-            font-size: 14px;
-            cursor: pointer;
-            text-decoration: none;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-        }
-
-        .btn-primary {
-            background: var(--primary);
-            color: white;
-        }
-
-        .btn-primary:hover { background: var(--primary-dark); }
-
-        .btn-secondary {
-            background: #eef2ff;
-            color: var(--primary);
-            border: 1px solid #c7d2fe;
-        }
-
-        .btn-danger {
-            background: #fee2e2;
-            color: var(--danger);
-            border: 1px solid #fecaca;
-        }
-
-        input[type="text"],
-        textarea,
-        select {
-            width: 100%;
-            padding: 10px 12px;
-            border: 1px solid var(--border);
-            border-radius: 8px;
-            font-size: 14px;
-            margin-top: 6px;
-        }
-
-        textarea {
-            min-height: 140px;
-            resize: vertical;
-        }
-
-        .errorlist {
-            color: var(--danger);
-            margin: 0 0 10px 0;
-            padding: 0;
-            list-style: none;
-            font-size: 13px;
-        }
-
-        .status-pill {
-            display: inline-block;
-            padding: 4px 10px;
-            border-radius: 999px;
-            font-size: 12px;
-            font-weight: 600;
-        }
-
-        .config-badge {
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-            padding: 8px 12px;
-            border-radius: 999px;
-            background: #eff6ff;
-            border: 1px solid #bfdbfe;
-            color: #1d4ed8;
-            font-size: 13px;
-            font-weight: 600;
-        }
-
-        .status-active {
-            background: #dcfce7;
-            color: #166534;
-        }
-
-        .status-inactive {
-            background: #f3f4f6;
-            color: #4b5563;
-        }
-
-        .modal-backdrop {
-            position: fixed;
-            inset: 0;
-            background: rgba(15, 23, 42, 0.45);
-            display: none;
-            align-items: center;
-            justify-content: center;
-            padding: 16px;
-            z-index: 1000;
-        }
-
-        .modal-backdrop.open {
-            display: flex;
-        }
-
-        .modal {
-            width: min(760px, 100%);
-            max-height: 90vh;
-            overflow: auto;
-            background: white;
-            border-radius: 14px;
-            border: 1px solid var(--border);
-            box-shadow: 0 20px 50px rgba(0,0,0,0.2);
-            padding: 20px;
-        }
-
-        .modal-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            gap: 12px;
-            margin-bottom: 14px;
-        }
-
-        .modal-close {
-            background: transparent;
-            color: #6b7280;
-            font-size: 22px;
-            padding: 4px 10px;
-        }
-
-        .modal form p {
-            margin: 0 0 14px;
-        }
-
-        .empty-state {
-            text-align: center;
-            color: var(--muted);
-            padding: 18px 12px;
-        }
-
-        @media (max-width: 768px) {
-            .page-header, .section-header {
-                align-items: flex-start;
-                flex-direction: column;
-            }
-
-            th, td {
-                font-size: 13px;
-                padding: 8px;
-            }
-        }
+        body { margin:0; font-family: Arial,"Microsoft YaHei",sans-serif; background:var(--bg); color:var(--text); }
+        .page { max-width:1280px; margin:24px auto; padding:0 16px 24px; }
+        .page-header { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:20px; }
+        .page-header h1 { margin:0; font-size:28px; }
+        .back-link { color:var(--primary); text-decoration:none; font-size:14px; }
+        .section { margin-bottom:20px; border:1px solid var(--border); padding:18px; border-radius:12px; background:var(--card); box-shadow:0 4px 14px rgba(0,0,0,0.04); }
+        .section-header { display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:12px; }
+        .section h2,.section h3 { margin:0; }
+        .hint { font-size:13px; color:var(--muted); margin:8px 0 0; line-height:1.5; }
+        .message-success { color:var(--success); font-size:13px; margin:10px 0; }
+        table { width:100%; border-collapse:collapse; margin-top:10px; background:white; }
+        th,td { border:1px solid #e5e7eb; padding:10px 12px; font-size:14px; text-align:left; vertical-align:top; }
+        th { background:#f3f4f6; }
+        .button-row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+        button,.btn { appearance:none; border:0; border-radius:8px; padding:9px 14px; font-size:14px; cursor:pointer; text-decoration:none; display:inline-flex; align-items:center; justify-content:center; }
+        .btn-primary { background:var(--primary); color:white; }
+        .btn-primary:hover { background:var(--primary-dark); }
+        .btn-secondary { background:#eef2ff; color:var(--primary); border:1px solid #c7d2fe; }
+        .btn-outline { background:transparent; color:var(--muted); border:1px solid var(--border); }
+        .btn-outline:hover { border-color:var(--primary); color:var(--primary); }
+        .btn-danger { background:#fee2e2; color:var(--danger); border:1px solid #fecaca; }
+        .btn-warning { background:#fef3c7; color:var(--warning); border:1px solid #fcd34d; }
+        input[type="text"],input[type="number"],textarea,select { width:100%; padding:10px 12px; border:1px solid var(--border); border-radius:8px; font-size:14px; margin-top:6px; }
+        textarea { min-height:100px; resize:vertical; }
+        .status-pill { display:inline-block; padding:4px 10px; border-radius:999px; font-size:12px; font-weight:600; }
+        .status-active { background:#dcfce7; color:#166534; }
+        .status-inactive { background:#f3f4f6; color:#4b5563; }
+        .config-badge { display:inline-flex; align-items:center; gap:8px; padding:8px 12px; border-radius:999px; background:#eff6ff; border:1px solid #bfdbfe; color:#1d4ed8; font-size:13px; font-weight:600; }
+        .modal-backdrop { position:fixed; inset:0; background:rgba(15,23,42,0.45); display:none; align-items:center; justify-content:center; padding:16px; z-index:1000; }
+        .modal-backdrop.open { display:flex; }
+        .modal { width:min(800px,100%); max-height:90vh; overflow:auto; background:white; border-radius:14px; border:1px solid var(--border); box-shadow:0 20px 50px rgba(0,0,0,0.2); padding:20px; }
+        .empty-state { text-align:center; color:var(--muted); padding:18px 12px; }
+        .badge-kg { display:inline-block; padding:2px 8px; border-radius:6px; font-size:11px; font-weight:600; background:#dbeafe; color:#1d4ed8; }
+        .badge-legacy { display:inline-block; padding:2px 8px; border-radius:6px; font-size:11px; font-weight:600; background:#f3f4f6; color:#6b7280; }
+        .default-star { color:#f59e0b; font-size:16px; margin-left:4px; }
+        .kg-sub-section { margin-top:14px; padding:12px; border:1px dashed var(--border); border-radius:8px; background:#fafbfc; }
+        .kg-sub-section h4 { margin:0 0 8px; }
+        .checkbox-group { display:flex; flex-wrap:wrap; gap:8px; margin-top:6px; }
+        .checkbox-group label { display:flex; align-items:center; gap:4px; font-size:14px; cursor:pointer; padding:6px 10px; border:1px solid var(--border); border-radius:8px; background:white; }
+        .checkbox-group label:hover { border-color:var(--primary); }
+        .checkbox-group input[type="checkbox"] { margin:0; }
+        @media (max-width:768px) { .page-header,.section-header { align-items:flex-start; flex-direction:column; } th,td { font-size:13px; padding:8px; } }
     </style>
 </head>
 <body>
-    <div class="page">
-        <div class="page-header">
-            <div>
-                <h1>系统管理</h1>
-                <p class="hint">管理 Ollama 智能体配置、系统上下文与参考知识。</p>
+<div class="page">
+    <div class="page-header">
+        <div><h1>系统管理</h1><p class="hint">管理 Ollama 智能体配置、知识图谱与参考知识。</p></div>
+        <a class="back-link" href="{% url 'promotion' %}">← 返回宣讲页面</a>
+    </div>
+
+    {% if upload_message %}<p class="message-success">{{ upload_message }}</p>{% endif %}
+
+    <!-- ═══ Single Model Config ═══ -->
+    <div class="section">
+        <div class="section-header">
+            <div><h2>单模型配置（非智能体）</h2><p class="hint">配置默认 Ollama 服务与模型。</p></div>
+            <div class="config-badge">当前保存：{{ single_model_config.ollama_host }}:{{ single_model_config.ollama_port }}</div>
+        </div>
+        <form method="POST" id="singleModelConfigForm">
+            {% csrf_token %}<input type="hidden" name="form_type" value="single_model_config">
+            <div class="button-row" style="align-items:flex-end;">
+                <p style="flex:1;margin:0;"><label for="single_ollama_host">Ollama IP / 主机名</label><input type="text" id="single_ollama_host" name="ollama_host" value="{{ single_model_config.ollama_host }}" required></p>
+                <p style="width:160px;margin:0;"><label for="single_ollama_port">Ollama 端口</label><input type="number" id="single_ollama_port" name="ollama_port" value="{{ single_model_config.ollama_port }}" required></p>
+                <button class="btn btn-secondary" type="button" id="fetchSingleModelsBtn">获取模型</button>
             </div>
-            <a class="back-link" href="{% url 'promotion' %}">← 返回宣讲页面</a>
+            <p id="singleModelFetchStatus" class="hint">请先填写 Ollama 地址并点击"获取模型"。</p>
+            <div><label>可用模型列表</label><div id="singleModelList" class="hint" style="margin-top:8px;padding:10px 12px;border:1px solid var(--border);border-radius:8px;background:#fff;min-height:44px;">尚未获取模型列表。</div></div>
+            <div class="button-row" style="margin-top:12px;"><button class="btn btn-primary" type="submit" id="saveSingleModelConfigBtn" disabled>保存单模型配置</button></div>
+        </form>
+    </div>
+
+    <!-- ═══ Knowledge Graph Configuration ═══ -->
+    <div class="section">
+        <div class="section-header">
+            <div><h2>知识图谱配置</h2><p class="hint">配置 Ollama Embedding 服务并管理三种知识：流程指南卡、专业知识库、学术文献。</p></div>
+            <button type="button" id="openKgCreateModalBtn" class="btn btn-primary">+ 新建知识图谱</button>
         </div>
 
-
-        <div class="section">
+        {% for kg in knowledge_graphs %}
+        <div class="kg-sub-section" id="kg-section-{{ kg.id }}">
             <div class="section-header">
                 <div>
-                    <h2>单模型配置（非智能体）</h2>
-                    <p class="hint">仅配置一个默认的 Ollama 服务与模型，暂时只保存在系统管理页，尚未接入 promotion 页面。</p>
+                    <h3>{{ kg.name }}</h3>
+                    <span class="hint">Embedding: {{ kg.ollama_host }}:{{ kg.ollama_port }} / {% if kg.embedding_model %}{{ kg.embedding_model }}{% else %}未配置{% endif %}</span>
                 </div>
-                <div class="config-badge">当前保存：{{ single_model_config.ollama_host }}:{{ single_model_config.ollama_port }}</div>
+                <div class="button-row">
+                    <button class="btn btn-secondary kg-edit-btn" data-kg-id="{{ kg.id }}" data-kg-name="{{ kg.name }}" data-kg-host="{{ kg.ollama_host }}" data-kg-port="{{ kg.ollama_port }}" data-kg-model="{{ kg.embedding_model }}" data-kg-ext-model="{{ kg.extraction_model }}">编辑</button>
+                    <form method="POST" style="display:inline;" onsubmit="return confirm('确定要删除知识图谱「{{ kg.name }}」及其所有知识条目吗？');">{% csrf_token %}<input type="hidden" name="form_type" value="kg_delete"><input type="hidden" name="kg_id" value="{{ kg.id }}"><button class="btn btn-danger" type="submit">删除</button></form>
+                </div>
             </div>
 
-            <form method="POST" id="singleModelConfigForm">
-                {% csrf_token %}
-                <input type="hidden" name="form_type" value="single_model_config">
-
-                <div class="button-row" style="align-items:flex-end;">
-                    <p style="flex:1; margin:0;">
-                        <label for="single_ollama_host">Ollama IP / 主机名</label>
-                        <input type="text" id="single_ollama_host" name="ollama_host" value="{{ single_model_config.ollama_host }}" required>
-                    </p>
-                    <p style="width:160px; margin:0;">
-                        <label for="single_ollama_port">Ollama 端口</label>
-                        <input type="number" id="single_ollama_port" name="ollama_port" value="{{ single_model_config.ollama_port }}" required>
-                    </p>
-                    <button class="btn btn-secondary" type="button" id="fetchSingleModelsBtn">获取模型</button>
-                </div>
-                <p id="singleModelFetchStatus" class="hint">请先填写 Ollama 地址并点击“获取模型”。</p>
-
-                <div>
-                    <label>可用模型列表</label>
-                    <div id="singleModelList" class="hint" style="margin-top:8px; padding:10px 12px; border:1px solid var(--border); border-radius:8px; background:#fff; min-height:44px;">
-                        尚未获取模型列表。
-                    </div>
-                </div>
-
-                <div class="button-row" style="margin-top:12px;">
-                    <button class="btn btn-primary" type="submit" id="saveSingleModelConfigBtn" disabled>保存单模型配置</button>
-                </div>
-            </form>
-        </div>
-
-        <div class="section">
-            <div class="section-header">
-                <div>
-                    <h2>已配置的智能体</h2>
-                    <p class="hint">当前项目中已保存的智能体列表。可直接启用、停用或删除。</p>
-                </div>
-                <button type="button" id="openAgentModalBtn" class="btn btn-primary">新建智能体+</button>
-            </div>
-
+            <!-- ── Reference Cards ── -->
+            <h4>📋 流程指南卡</h4>
             <table>
-                <thead>
-                    <tr>
-                        <th>名称</th>
-                        <th>slug</th>
-                        <th>Ollama 服务</th>
-                        <th>Ollama 模型名</th>
-                        <th>状态</th>
-                        <th>操作</th>
-                    </tr>
-                </thead>
+                <thead><tr><th>标题</th><th>分类</th><th>媒体</th><th>关键词</th><th>操作</th></tr></thead>
                 <tbody>
-                    {% for a in agents %}
+                    {% for rc in ref_cards_by_kg|get_item:kg.id %}
                     <tr>
-                        <td>{{ a.name }}</td>
-                        <td>{{ a.slug }}</td>
-                        <td>{{ a.ollama_host }}:{{ a.ollama_port }}</td>
-                        <td>{{ a.ollama_model }}</td>
-                        <td>
-                            {% if a.is_active %}
-                                <span class="status-pill status-active">启用中</span>
-                            {% else %}
-                                <span class="status-pill status-inactive">已停用</span>
-                            {% endif %}
-                        </td>
+                        <td>{{ rc.title }}</td><td>{{ rc.get_category_display }}</td>
+                        <td>{% if rc.media_type != 'none' %}{{ rc.get_media_type_display }} {% if rc.media_timespan %}({{ rc.media_timespan }}){% endif %}{% else %}—{% endif %}</td>
+                        <td style="font-size:12px;max-width:200px;word-break:break-all;">{{ rc.trigger_keywords|truncatechars:60 }}</td>
                         <td>
                             <div class="button-row">
-                                <button
-                                    type="button"
-                                    class="btn btn-secondary edit-agent-btn"
-                                    data-agent-id="{{ a.id }}"
-                                    data-agent-name="{{ a.name }}"
-                                    data-agent-slug="{{ a.slug }}"
-                                    data-agent-host="{{ a.ollama_host }}"
-                                    data-agent-port="{{ a.ollama_port }}"
-                                    data-agent-model="{{ a.ollama_model }}"
-                                    data-agent-system-prompt="{{ a.system_prompt }}"
-                                    data-agent-knowledge="{{ a.knowledge }}"
-                                    data-agent-active="{% if a.is_active %}true{% else %}false{% endif %}"
-                                >编辑</button>
-
-                                <form method="POST" style="display:inline;">
-                                    {% csrf_token %}
-                                    <input type="hidden" name="form_type" value="agent_action">
-                                    <input type="hidden" name="agent_id" value="{{ a.id }}">
-                                    <button class="btn btn-secondary" type="submit" name="action" value="toggle_active">
-                                        {% if a.is_active %}停用{% else %}启用{% endif %}
-                                    </button>
-                                </form>
-
-                                <form method="POST" style="display:inline;" onsubmit="return confirm('确定要删除该智能体吗？');">
-                                    {% csrf_token %}
-                                    <input type="hidden" name="form_type" value="agent_action">
-                                    <input type="hidden" name="agent_id" value="{{ a.id }}">
-                                    <button class="btn btn-danger" type="submit" name="action" value="delete">删除</button>
-                                </form>
+                                <button class="btn btn-secondary rc-edit-btn" data-rc-id="{{ rc.id }}" data-rc-title="{{ rc.title }}" data-rc-keywords="{{ rc.trigger_keywords }}" data-rc-category="{{ rc.category }}" data-rc-media-type="{{ rc.media_type }}" data-rc-media-url="{{ rc.media_url }}" data-rc-media-timespan="{{ rc.media_timespan }}" data-rc-key-points="{{ rc.key_points|safe }}" data-rc-sort-order="{{ rc.sort_order }}">编辑</button>
+                                <form method="POST" style="display:inline;" onsubmit="return confirm('确定要删除该指南卡吗？');">{% csrf_token %}<input type="hidden" name="form_type" value="kg_refcard_delete"><input type="hidden" name="kg_id" value="{{ kg.id }}"><input type="hidden" name="rc_id" value="{{ rc.id }}"><button class="btn btn-danger" type="submit">删除</button></form>
                             </div>
                         </td>
                     </tr>
                     {% empty %}
-                    <tr>
-                        <td colspan="6" class="empty-state">暂无智能体，点击右上角“新建智能体+”开始创建。</td>
-                    </tr>
+                    <tr><td colspan="5" class="empty-state">暂无指南卡</td></tr>
                     {% endfor %}
                 </tbody>
             </table>
+            <button class="btn btn-secondary rc-create-btn" data-kg-id="{{ kg.id }}" style="margin-top:8px;">+ 添加指南卡</button>
+            <button class="btn btn-outline ai-import-btn" data-kg-id="{{ kg.id }}" data-kg-type="reference_card" style="margin-top:8px;margin-left:6px;">🤖 AI 导入</button>
+            <button class="btn btn-outline ai-batch-btn" data-kg-id="{{ kg.id }}" data-kg-type="reference_card" style="margin-top:8px;margin-left:4px;">📦 批量导入</button>
+
+            <!-- ── Knowledge Entries ── -->
+            <h4 style="margin-top:14px;">📚 专业知识库</h4>
+            <table>
+                <thead><tr><th>标题</th><th>标签</th><th>来源</th><th>操作</th></tr></thead>
+                <tbody>
+                    {% for ke in kg_entries_by_kg|get_item:kg.id %}
+                    <tr>
+                        <td>{{ ke.title }}</td><td style="font-size:12px;">{{ ke.tags }}</td><td style="font-size:12px;">{{ ke.source|truncatechars:40 }}</td>
+                        <td>
+                            <div class="button-row">
+                                <button class="btn btn-secondary ke-edit-btn" data-ke-id="{{ ke.id }}" data-ke-title="{{ ke.title }}" data-ke-content="{{ ke.content|escape }}" data-ke-source="{{ ke.source }}" data-ke-tags="{{ ke.tags }}">编辑</button>
+                                <form method="POST" style="display:inline;" onsubmit="return confirm('确定要删除该知识条目吗？');">{% csrf_token %}<input type="hidden" name="form_type" value="kg_knowledge_delete"><input type="hidden" name="kg_id" value="{{ kg.id }}"><input type="hidden" name="ke_id" value="{{ ke.id }}"><button class="btn btn-danger" type="submit">删除</button></form>
+                            </div>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="4" class="empty-state">暂无知识条目</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            <button class="btn btn-secondary ke-create-btn" data-kg-id="{{ kg.id }}" style="margin-top:8px;">+ 添加知识条目</button>
+            <button class="btn btn-outline ai-import-btn" data-kg-id="{{ kg.id }}" data-kg-type="knowledge_entry" style="margin-top:8px;margin-left:6px;">🤖 AI 导入</button>
+            <button class="btn btn-outline ai-batch-btn" data-kg-id="{{ kg.id }}" data-kg-type="knowledge_entry" style="margin-top:8px;margin-left:4px;">📦 批量导入</button>
+
+            <!-- ── Literature ── -->
+            <h4 style="margin-top:14px;">📄 学术文献</h4>
+            <table>
+                <thead><tr><th>标题</th><th>作者</th><th>期刊/年份</th><th>证据等级</th><th>操作</th></tr></thead>
+                <tbody>
+                    {% for lit in lit_entries_by_kg|get_item:kg.id %}
+                    <tr>
+                        <td>{{ lit.title }}</td><td>{{ lit.authors|truncatechars:30 }}</td><td>{{ lit.journal|truncatechars:30 }} {% if lit.year %}({{ lit.year }}){% endif %}</td>
+                        <td>{% if lit.evidence_level %}{{ lit.get_evidence_level_display }}{% else %}—{% endif %}</td>
+                        <td>
+                            <div class="button-row">
+                                <button class="btn btn-secondary lit-edit-btn" data-lit-id="{{ lit.id }}" data-lit-title="{{ lit.title }}" data-lit-authors="{{ lit.authors }}" data-lit-year="{{ lit.year|default:'' }}" data-lit-journal="{{ lit.journal }}" data-lit-doi="{{ lit.doi }}" data-lit-abstract="{{ lit.abstract|escape }}" data-lit-full-text="{{ lit.full_text|escape }}" data-lit-evidence="{{ lit.evidence_level }}">编辑</button>
+                                <form method="POST" style="display:inline;" onsubmit="return confirm('确定要删除该文献吗？');">{% csrf_token %}<input type="hidden" name="form_type" value="kg_literature_delete"><input type="hidden" name="kg_id" value="{{ kg.id }}"><input type="hidden" name="lit_id" value="{{ lit.id }}"><button class="btn btn-danger" type="submit">删除</button></form>
+                            </div>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="5" class="empty-state">暂无文献</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            <button class="btn btn-secondary lit-create-btn" data-kg-id="{{ kg.id }}" style="margin-top:8px;">+ 添加文献</button>
+            <button class="btn btn-outline ai-import-btn" data-kg-id="{{ kg.id }}" data-kg-type="literature" style="margin-top:8px;margin-left:6px;">🤖 AI 导入</button>
+            <button class="btn btn-outline ai-batch-btn" data-kg-id="{{ kg.id }}" data-kg-type="literature" style="margin-top:8px;margin-left:4px;">📦 批量导入</button>
         </div>
-
-        <div class="section">
-            <div class="section-header">
-                <div>
-                    <h2>上传知识文档（Word / PPT / PDF）</h2>
-                    <p class="hint">
-                        上传的文档不会保存原始文件，只会提取文字内容写入数据库，
-                        并自动合并到全局背景知识（knowledge.txt）中。
-                    </p>
-                </div>
-            </div>
-
-            {% if upload_message %}
-                <p class="message-success">{{ upload_message }}</p>
-            {% endif %}
-
-            <form method="POST" enctype="multipart/form-data">
-                {% csrf_token %}
-                <input type="hidden" name="form_type" value="upload_knowledge_doc">
-                <div>
-                    <label for="id_title">标题（可选）：</label>
-                    <input type="text" id="id_title" name="title">
-                </div>
-                <div style="margin-top:12px;">
-                    <input type="file" name="knowledge_file" accept=".pdf,.docx,.pptx,.doc,.ppt">
-                </div>
-                <div class="button-row" style="margin-top:12px;">
-                    <button class="btn btn-primary" type="submit">上传并导入知识</button>
-                </div>
-            </form>
-
-            {% if knowledge_docs %}
-                <h3 style="margin-top:18px;">已导入的知识文档</h3>
-                <table>
-                    <thead>
-                        <tr>
-                            <th>标题</th>
-                            <th>创建时间</th>
-                            <th>内容预览</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for d in knowledge_docs %}
-                        <tr>
-                            <td>{{ d.title }}</td>
-                            <td>{{ d.created_at|date:"Y-m-d H:i" }}</td>
-                            <td>{{ d.content|truncatechars:80 }}</td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            {% endif %}
-        </div>
+        {% empty %}
+        <p class="empty-state">暂无知识图谱，点击右上角"+ 新建知识图谱"创建。</p>
+        {% endfor %}
     </div>
 
-    <div id="agentModalBackdrop" class="modal-backdrop">
-        <div class="modal" role="dialog" aria-modal="true" aria-labelledby="agentModalTitle">
-            <div class="modal-header">
-                <div>
-                    <h2 id="agentModalTitle">新建 Ollama 智能体</h2>
-                    <p class="hint">填写名称、slug、模型名，以及该智能体的角色上下文与参考知识。运行时会把两者合并为系统上下文，并结合会话记忆发送给 Ollama。</p>
-                </div>
-                <button type="button" id="closeAgentModalBtn" class="modal-close" aria-label="关闭">×</button>
+    <!-- ═══ Agent List ═══ -->
+    <div class="section">
+        <div class="section-header">
+            <div><h2>已配置的智能体</h2><p class="hint">新版智能体绑定知识图谱实现精准检索；旧版智能体继续使用文本知识字段。</p></div>
+            <div class="button-row">
+                <button type="button" id="openAgentKgModalBtn" class="btn btn-primary">新建智能体+</button>
+                <button type="button" id="openAgentLegacyModalBtn" class="btn btn-outline">新建智能体+（旧版）</button>
             </div>
-
-            <form method="POST" id="createAgentForm">
-                {% csrf_token %}
-                <input type="hidden" name="form_type" value="agent">
-
-                <div style="padding:12px; margin-bottom:14px; border:1px dashed var(--border); border-radius:10px; background:#f8fafc;">
-                    <label for="create_template_agent"><strong>从现有智能体复制</strong></label>
-                    <div class="button-row" style="align-items:flex-end; margin-top:8px;">
-                        <p style="flex:1; margin:0;">
-                            <select id="create_template_agent">
-                                <option value="">不使用模板（从空白创建）</option>
-                                {% for a in agents %}
-                                <option value="{{ a.id }}">{{ a.name }}（{{ a.slug }}）</option>
-                                {% endfor %}
-                            </select>
-                        </p>
-                        <button class="btn btn-secondary" type="button" id="applyTemplateBtn">加载模板</button>
-                    </div>
-                    <p class="hint">会复制主机、端口、模型、system prompt 和知识内容。为避免冲突，名称和 slug 不会自动复制。</p>
-                </div>
-
-                <p>
-                    <label for="create_name">智能体名称</label>
-                    <input type="text" id="create_name" name="name" required>
-                </p>
-
-                <p>
-                    <label for="create_slug">标识（slug）</label>
-                    <input type="text" id="create_slug" name="slug" required>
-                </p>
-
-                <div class="button-row" style="align-items:flex-end;">
-                    <p style="flex:1; margin:0;">
-                        <label for="create_ollama_host">Ollama IP / 主机名</label>
-                        <input type="text" id="create_ollama_host" name="ollama_host" value="127.0.0.1" required>
-                    </p>
-                    <p style="width:160px; margin:0;">
-                        <label for="create_ollama_port">Ollama 端口</label>
-                        <input type="number" id="create_ollama_port" name="ollama_port" value="11434" required>
-                    </p>
-                    <button class="btn btn-secondary" type="button" id="fetchCreateModelsBtn">获取模型</button>
-                </div>
-                <p id="createModelFetchStatus" class="hint">请先填写 Ollama 地址并点击“获取模型”。</p>
-
-                <p>
-                    <label for="create_ollama_model">Ollama 模型名</label>
-                    <select id="create_ollama_model" name="ollama_model" disabled required></select>
-                </p>
-
-                <p>
-                    <label for="create_system_prompt">角色上下文（system context）</label>
-                    <textarea id="create_system_prompt" name="system_prompt" disabled></textarea>
-                    <span class="hint">用于定义智能体身份、风格、规则和任务边界。</span>
-                </p>
-
-                <p>
-                    <label for="create_knowledge">参考知识（并入系统上下文）</label>
-                    <textarea id="create_knowledge" name="knowledge" disabled></textarea>
-                    <span class="hint">运行时会与角色上下文合并后一起发送给 Ollama；不是独立的会话记忆。</span>
-                </p>
-
-                <p>
-                    <label style="display:flex;align-items:center;gap:8px;">
-                        <input type="checkbox" id="create_is_active" name="is_active" disabled checked>
-                        是否启用
-                    </label>
-                </p>
-
-                <div class="button-row">
-                    <button class="btn btn-primary" type="submit" id="saveCreateAgentBtn" disabled>保存智能体</button>
-                    <button class="btn btn-secondary" type="button" id="cancelAgentModalBtn">取消</button>
-                </div>
-            </form>
         </div>
+        <table>
+            <thead><tr><th>名称</th><th>slug</th><th>类型</th><th>Ollama 服务</th><th>Ollama 模型名</th><th>状态</th><th>操作</th></tr></thead>
+            <tbody>
+                {% for a in agents %}
+                <tr>
+                    <td>{% if a.is_default %}<span class="default-star" title="默认智能体">⭐</span>{% endif %}{{ a.name }}</td>
+                    <td>{{ a.slug }}</td>
+                    <td>{% if a.agent_type == 'kg' %}<span class="badge-kg">知识图谱</span>{% else %}<span class="badge-legacy">旧版</span>{% endif %}</td>
+                    <td>{{ a.ollama_host }}:{{ a.ollama_port }}</td>
+                    <td>{{ a.ollama_model }}</td>
+                    <td>{% if a.is_active %}<span class="status-pill status-active">启用中</span>{% else %}<span class="status-pill status-inactive">已停用</span>{% endif %}</td>
+                    <td>
+                        <div class="button-row">
+                            {% if a.agent_type == 'kg' %}
+                            <button type="button" class="btn btn-secondary edit-agent-kg-btn" data-agent-id="{{ a.id }}" data-agent-name="{{ a.name }}" data-agent-slug="{{ a.slug }}" data-agent-host="{{ a.ollama_host }}" data-agent-port="{{ a.ollama_port }}" data-agent-model="{{ a.ollama_model }}" data-agent-system-prompt="{{ a.system_prompt }}" data-agent-active="{% if a.is_active %}true{% else %}false{% endif %}" data-agent-kg-ids="{% for kg in a.knowledge_graphs.all %}{{ kg.id }}{% if not forloop.last %},{% endif %}{% endfor %}">编辑</button>
+                            {% else %}
+                            <button type="button" class="btn btn-secondary edit-agent-btn" data-agent-id="{{ a.id }}" data-agent-name="{{ a.name }}" data-agent-slug="{{ a.slug }}" data-agent-host="{{ a.ollama_host }}" data-agent-port="{{ a.ollama_port }}" data-agent-model="{{ a.ollama_model }}" data-agent-system-prompt="{{ a.system_prompt }}" data-agent-knowledge="{{ a.knowledge }}" data-agent-active="{% if a.is_active %}true{% else %}false{% endif %}">编辑</button>
+                            {% endif %}
+                            <form method="POST" style="display:inline;">{% csrf_token %}<input type="hidden" name="form_type" value="agent_action"><input type="hidden" name="agent_id" value="{{ a.id }}"><button class="btn btn-secondary" type="submit" name="action" value="toggle_active">{% if a.is_active %}停用{% else %}启用{% endif %}</button></form>
+                            <form method="POST" style="display:inline;" onsubmit="return confirm('确定要删除该智能体吗？');">{% csrf_token %}<input type="hidden" name="form_type" value="agent_action"><input type="hidden" name="agent_id" value="{{ a.id }}"><button class="btn btn-danger" type="submit" name="action" value="delete">删除</button></form>
+                            {% if not a.is_default %}<form method="POST" style="display:inline;">{% csrf_token %}<input type="hidden" name="form_type" value="agent_set_default"><input type="hidden" name="agent_id" value="{{ a.id }}"><button class="btn btn-warning" type="submit">设为默认</button></form>{% endif %}
+                        </div>
+                    </td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="7" class="empty-state">暂无智能体，点击"新建智能体+"开始创建。</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
     </div>
+</div>
 
-    <div id="editAgentModalBackdrop" class="modal-backdrop">
-        <div class="modal" role="dialog" aria-modal="true" aria-labelledby="editAgentModalTitle">
-            <div class="modal-header">
-                <div>
-                    <h2 id="editAgentModalTitle">编辑智能体</h2>
-                    <p class="hint">修改当前智能体的名称、slug、模型、角色上下文和参考知识配置。</p>
-                </div>
-                <button type="button" id="closeEditAgentModalBtn" class="modal-close" aria-label="关闭">×</button>
+<!-- ═══ MODALS ═══ -->
+
+<!-- KG Create -->
+<div id="kgCreateBackdrop" class="modal-backdrop">
+    <div class="modal"><div class="modal-header"><h2>新建知识图谱</h2><button type="button" class="btn btn-secondary kg-modal-close">×</button></div>
+        <form method="POST">{% csrf_token %}<input type="hidden" name="form_type" value="kg_create">
+            <p><label>知识图谱名称</label><input type="text" name="kg_name" required></p>
+            <div class="button-row" style="align-items:flex-end;">
+                <p style="flex:1;margin:0;"><label>Ollama 主机</label><input type="text" name="kg_host" id="kg_create_host_emb" value="127.0.0.1" required></p>
+                <p style="width:160px;margin:0;"><label>端口</label><input type="number" name="kg_port" id="kg_create_port_emb" value="11434" required></p>
+                <button class="btn btn-secondary" type="button" id="fetchKgCreateModelsBtn">获取 Embedding</button>
             </div>
-
-            <form method="POST">
-                {% csrf_token %}
-                <input type="hidden" name="form_type" value="agent_edit">
-                <input type="hidden" name="agent_id" id="edit_agent_id">
-
-                <p>
-                    <label for="edit_name">智能体名称</label>
-                    <input type="text" id="edit_name" name="name" required>
-                </p>
-
-                <p>
-                    <label for="edit_slug">标识（slug）</label>
-                    <input type="text" id="edit_slug" name="slug" required>
-                </p>
-
-                <div class="button-row" style="align-items:flex-end;">
-                    <p style="flex:1; margin:0;">
-                        <label for="edit_ollama_host">Ollama IP / 主机名</label>
-                        <input type="text" id="edit_ollama_host" name="ollama_host" required>
-                    </p>
-                    <p style="width:160px; margin:0;">
-                        <label for="edit_ollama_port">Ollama 端口</label>
-                        <input type="number" id="edit_ollama_port" name="ollama_port" required>
-                    </p>
-                    <button class="btn btn-secondary" type="button" id="fetchEditModelsBtn">获取模型</button>
-                </div>
-                <p id="editModelFetchStatus" class="hint">请先连接 Ollama 服务并获取模型列表。</p>
-
-                <p>
-                    <label for="edit_ollama_model">Ollama 模型名</label>
-                    <select id="edit_ollama_model" name="ollama_model" disabled required></select>
-                </p>
-
-                <p>
-                    <label for="edit_system_prompt">角色上下文（system context）</label>
-                    <textarea id="edit_system_prompt" name="system_prompt" disabled></textarea>
-                    <span class="hint">用于定义智能体身份、风格、规则和任务边界。</span>
-                </p>
-
-                <p>
-                    <label for="edit_knowledge">参考知识（并入系统上下文）</label>
-                    <textarea id="edit_knowledge" name="knowledge" disabled></textarea>
-                    <span class="hint">运行时会与角色上下文合并后一起发送给 Ollama；不是独立的会话记忆。</span>
-                </p>
-
-                <p>
-                    <label style="display:flex;align-items:center;gap:8px;">
-                        <input type="checkbox" id="edit_is_active" name="is_active" disabled>
-                        是否启用
-                    </label>
-                </p>
-
-                <div class="button-row">
-                    <button class="btn btn-primary" type="submit" id="saveEditAgentBtn" disabled>保存修改</button>
-                    <button class="btn btn-secondary" type="button" id="cancelEditAgentModalBtn">取消</button>
-                </div>
-            </form>
-        </div>
+            <p id="kgCreateFetchStatus" class="hint">请先点击"获取 Embedding"拉取可用模型。</p>
+            <p><label>Embedding 模型</label><select name="kg_embedding_model" id="kg_create_emb_model" disabled required></select></p>
+            <div class="button-row" style="align-items:flex-end;">
+                <p style="flex:1;margin:0;"><label>AI 提取模型（可选，用于 AI 导入功能）</label><select name="kg_extraction_model" id="kg_create_ext_model" disabled></select></p>
+                <button class="btn btn-outline" type="button" id="fetchKgCreateExtModelsBtn" style="margin-top:24px;">获取提取模型</button>
+            </div>
+            <p id="kgCreateExtStatus" class="hint">配置 AI 提取模型后可使用「AI 导入」自动提取知识。</p>
+            <div class="button-row"><button class="btn btn-primary" type="submit" id="saveKgCreateBtn" disabled>保存</button><button type="button" class="btn btn-secondary kg-modal-close">取消</button></div>
+        </form>
     </div>
+</div>
 
-    <script>
-        (function () {
-            const modelApiUrl = "{% url 'ollama_models' %}";
+<!-- KG Edit -->
+<div id="kgEditBackdrop" class="modal-backdrop">
+    <div class="modal"><div class="modal-header"><h2>编辑知识图谱</h2><button type="button" class="btn btn-secondary kg-edit-modal-close">×</button></div>
+        <form method="POST">{% csrf_token %}<input type="hidden" name="form_type" value="kg_edit"><input type="hidden" name="kg_id" id="kg_edit_id">
+            <p><label>知识图谱名称</label><input type="text" name="kg_name" id="kg_edit_name_fld" required></p>
+            <div class="button-row" style="align-items:flex-end;">
+                <p style="flex:1;margin:0;"><label>Ollama 主机</label><input type="text" name="kg_host" id="kg_edit_host_emb" required></p>
+                <p style="width:160px;margin:0;"><label>端口</label><input type="number" name="kg_port" id="kg_edit_port_emb" required></p>
+                <button class="btn btn-secondary" type="button" id="fetchKgEditModelsBtn">获取 Embedding</button>
+            </div>
+            <p id="kgEditFetchStatus" class="hint">请先点击"获取 Embedding"拉取可用模型。</p>
+            <p><label>Embedding 模型</label><select name="kg_embedding_model" id="kg_edit_emb_model" disabled required></select></p>
+            <div class="button-row" style="align-items:flex-end;">
+                <p style="flex:1;margin:0;"><label>AI 提取模型（可选）</label><select name="kg_extraction_model" id="kg_edit_ext_model" disabled></select></p>
+                <button class="btn btn-outline" type="button" id="fetchKgEditExtModelsBtn" style="margin-top:24px;">获取提取模型</button>
+            </div>
+            <p id="kgEditExtStatus" class="hint">配置 AI 提取模型后可使用「AI 导入」。</p>
+            <div class="button-row"><button class="btn btn-primary" type="submit" id="saveKgEditBtn" disabled>保存修改</button><button type="button" class="btn btn-secondary kg-edit-modal-close">取消</button></div>
+        </form>
+    </div>
+</div>
 
-            const createBackdrop = document.getElementById('agentModalBackdrop');
-            const openCreateBtn = document.getElementById('openAgentModalBtn');
-            const closeCreateBtn = document.getElementById('closeAgentModalBtn');
-            const cancelCreateBtn = document.getElementById('cancelAgentModalBtn');
+<!-- RefCard Create -->
+<div id="rcCreateBackdrop" class="modal-backdrop">
+    <div class="modal"><div class="modal-header"><h2>添加流程指南卡</h2><button type="button" class="btn btn-secondary rc-modal-close">×</button></div>
+        <form method="POST">{% csrf_token %}<input type="hidden" name="form_type" value="kg_refcard_create"><input type="hidden" name="kg_id" id="rc_create_kg_id">
+            <p><label>标题</label><input type="text" name="rc_title" required></p>
+            <p><label>触发关键词（每行一个）</label><textarea name="rc_keywords" rows="3"></textarea></p>
+            <div class="button-row">
+                <p style="flex:1;margin:0;"><label>分类</label><select name="rc_category">{% for val,label in card_categories %}<option value="{{ val }}">{{ label }}</option>{% endfor %}</select></p>
+                <p style="flex:1;margin:0;"><label>媒体类型</label><select name="rc_media_type">{% for val,label in media_types %}<option value="{{ val }}">{{ label }}</option>{% endfor %}</select></p>
+            </div>
+            <p><label>媒体链接</label><input type="text" name="rc_media_url"></p>
+            <p><label>时间区间（如 00:09-01:39）</label><input type="text" name="rc_media_timespan"></p>
+            <p><label>要点（JSON格式）</label><textarea name="rc_key_points" rows="4">[{"label":"要点1","text":""}]</textarea><span class="hint">格式：[{"label":"标题","text":"内容"},...]</span></p>
+            <p><label>排序（数字越小越靠前）</label><input type="number" name="rc_sort_order" value="0"></p>
+            <div class="button-row"><button class="btn btn-primary" type="submit">保存</button><button type="button" class="btn btn-secondary rc-modal-close">取消</button></div>
+        </form>
+    </div>
+</div>
 
-            const editBackdrop = document.getElementById('editAgentModalBackdrop');
-            const closeEditBtn = document.getElementById('closeEditAgentModalBtn');
-            const cancelEditBtn = document.getElementById('cancelEditAgentModalBtn');
-            const editButtons = document.querySelectorAll('.edit-agent-btn');
+<!-- RefCard Edit -->
+<div id="rcEditBackdrop" class="modal-backdrop">
+    <div class="modal"><div class="modal-header"><h2>编辑流程指南卡</h2><button type="button" class="btn btn-secondary rc-edit-modal-close">×</button></div>
+        <form method="POST">{% csrf_token %}<input type="hidden" name="form_type" value="kg_refcard_edit"><input type="hidden" name="kg_id" id="rc_edit_kg_id"><input type="hidden" name="rc_id" id="rc_edit_id">
+            <p><label>标题</label><input type="text" name="rc_title" id="rc_edit_title" required></p>
+            <p><label>触发关键词（每行一个）</label><textarea name="rc_keywords" id="rc_edit_keywords" rows="3"></textarea></p>
+            <div class="button-row">
+                <p style="flex:1;margin:0;"><label>分类</label><select name="rc_category" id="rc_edit_category">{% for val,label in card_categories %}<option value="{{ val }}">{{ label }}</option>{% endfor %}</select></p>
+                <p style="flex:1;margin:0;"><label>媒体类型</label><select name="rc_media_type" id="rc_edit_media_type">{% for val,label in media_types %}<option value="{{ val }}">{{ label }}</option>{% endfor %}</select></p>
+            </div>
+            <p><label>媒体链接</label><input type="text" name="rc_media_url" id="rc_edit_media_url"></p>
+            <p><label>时间区间</label><input type="text" name="rc_media_timespan" id="rc_edit_media_timespan"></p>
+            <p><label>要点（JSON格式）</label><textarea name="rc_key_points" id="rc_edit_key_points" rows="4"></textarea></p>
+            <p><label>排序</label><input type="number" name="rc_sort_order" id="rc_edit_sort_order" value="0"></p>
+            <div class="button-row"><button class="btn btn-primary" type="submit">保存修改</button><button type="button" class="btn btn-secondary rc-edit-modal-close">取消</button></div>
+        </form>
+    </div>
+</div>
 
-            const singleState = {
-                host: document.getElementById('single_ollama_host'),
-                port: document.getElementById('single_ollama_port'),
-                listBox: document.getElementById('singleModelList'),
-                saveBtn: document.getElementById('saveSingleModelConfigBtn'),
-                fetchBtn: document.getElementById('fetchSingleModelsBtn'),
-                status: document.getElementById('singleModelFetchStatus'),
-            };
+<!-- KnowledgeEntry Create -->
+<div id="keCreateBackdrop" class="modal-backdrop">
+    <div class="modal"><div class="modal-header"><h2>添加专业知识条目</h2><button type="button" class="btn btn-secondary ke-modal-close">×</button></div>
+        <form method="POST">{% csrf_token %}<input type="hidden" name="form_type" value="kg_knowledge_create"><input type="hidden" name="kg_id" id="ke_create_kg_id">
+            <p><label>标题</label><input type="text" name="ke_title" required></p>
+            <p><label>知识内容</label><textarea name="ke_content" rows="6" required></textarea></p>
+            <p><label>来源</label><input type="text" name="ke_source" placeholder="如《神经外科护理常规》"></p>
+            <p><label>标签（逗号分隔）</label><input type="text" name="ke_tags" placeholder="如 帕金森,步态障碍,跌倒预防"></p>
+            <div class="button-row"><button class="btn btn-primary" type="submit">保存</button><button type="button" class="btn btn-secondary ke-modal-close">取消</button></div>
+        </form>
+    </div>
+</div>
 
-            const createState = {
-                name: document.getElementById('create_name'),
-                slug: document.getElementById('create_slug'),
-                host: document.getElementById('create_ollama_host'),
-                port: document.getElementById('create_ollama_port'),
-                model: document.getElementById('create_ollama_model'),
-                systemPrompt: document.getElementById('create_system_prompt'),
-                knowledge: document.getElementById('create_knowledge'),
-                isActive: document.getElementById('create_is_active'),
-                saveBtn: document.getElementById('saveCreateAgentBtn'),
-                fetchBtn: document.getElementById('fetchCreateModelsBtn'),
-                status: document.getElementById('createModelFetchStatus'),
-                templateSelect: document.getElementById('create_template_agent'),
-                applyTemplateBtn: document.getElementById('applyTemplateBtn'),
-            };
+<!-- KnowledgeEntry Edit -->
+<div id="keEditBackdrop" class="modal-backdrop">
+    <div class="modal"><div class="modal-header"><h2>编辑专业知识条目</h2><button type="button" class="btn btn-secondary ke-edit-modal-close">×</button></div>
+        <form method="POST">{% csrf_token %}<input type="hidden" name="form_type" value="kg_knowledge_edit"><input type="hidden" name="kg_id" id="ke_edit_kg_id"><input type="hidden" name="ke_id" id="ke_edit_id">
+            <p><label>标题</label><input type="text" name="ke_title" id="ke_edit_title" required></p>
+            <p><label>知识内容</label><textarea name="ke_content" id="ke_edit_content" rows="6" required></textarea></p>
+            <p><label>来源</label><input type="text" name="ke_source" id="ke_edit_source"></p>
+            <p><label>标签（逗号分隔）</label><input type="text" name="ke_tags" id="ke_edit_tags"></p>
+            <div class="button-row"><button class="btn btn-primary" type="submit">保存修改</button><button type="button" class="btn btn-secondary ke-edit-modal-close">取消</button></div>
+        </form>
+    </div>
+</div>
 
-            const editState = {
-                host: document.getElementById('edit_ollama_host'),
-                port: document.getElementById('edit_ollama_port'),
-                model: document.getElementById('edit_ollama_model'),
-                systemPrompt: document.getElementById('edit_system_prompt'),
-                knowledge: document.getElementById('edit_knowledge'),
-                isActive: document.getElementById('edit_is_active'),
-                saveBtn: document.getElementById('saveEditAgentBtn'),
-                fetchBtn: document.getElementById('fetchEditModelsBtn'),
-                status: document.getElementById('editModelFetchStatus'),
-            };
+<!-- Literature Create -->
+<div id="litCreateBackdrop" class="modal-backdrop">
+    <div class="modal"><div class="modal-header"><h2>添加学术文献</h2><button type="button" class="btn btn-secondary lit-modal-close">×</button></div>
+        <form method="POST">{% csrf_token %}<input type="hidden" name="form_type" value="kg_literature_create"><input type="hidden" name="kg_id" id="lit_create_kg_id">
+            <p><label>标题</label><input type="text" name="lit_title" required></p>
+            <p><label>作者</label><input type="text" name="lit_authors"></p>
+            <div class="button-row">
+                <p style="flex:1;margin:0;"><label>年份</label><input type="number" name="lit_year"></p>
+                <p style="flex:1;margin:0;"><label>证据等级</label><select name="lit_evidence"><option value="">—</option>{% for val,label in evidence_levels %}<option value="{{ val }}">{{ label }}</option>{% endfor %}</select></p>
+            </div>
+            <p><label>期刊</label><input type="text" name="lit_journal"></p>
+            <p><label>DOI</label><input type="text" name="lit_doi"></p>
+            <p><label>摘要（用于检索匹配）</label><textarea name="lit_abstract" rows="4" required></textarea></p>
+            <p><label>全文（可选）</label><textarea name="lit_full_text" rows="4"></textarea></p>
+            <div class="button-row"><button class="btn btn-primary" type="submit">保存</button><button type="button" class="btn btn-secondary lit-modal-close">取消</button></div>
+        </form>
+    </div>
+</div>
 
-            function openModal(backdrop) {
-                backdrop.classList.add('open');
-            }
+<!-- Literature Edit -->
+<div id="litEditBackdrop" class="modal-backdrop">
+    <div class="modal"><div class="modal-header"><h2>编辑学术文献</h2><button type="button" class="btn btn-secondary lit-edit-modal-close">×</button></div>
+        <form method="POST">{% csrf_token %}<input type="hidden" name="form_type" value="kg_literature_edit"><input type="hidden" name="kg_id" id="lit_edit_kg_id"><input type="hidden" name="lit_id" id="lit_edit_id">
+            <p><label>标题</label><input type="text" name="lit_title" id="lit_edit_title" required></p>
+            <p><label>作者</label><input type="text" name="lit_authors" id="lit_edit_authors"></p>
+            <div class="button-row">
+                <p style="flex:1;margin:0;"><label>年份</label><input type="number" name="lit_year" id="lit_edit_year"></p>
+                <p style="flex:1;margin:0;"><label>证据等级</label><select name="lit_evidence" id="lit_edit_evidence"><option value="">—</option>{% for val,label in evidence_levels %}<option value="{{ val }}">{{ label }}</option>{% endfor %}</select></p>
+            </div>
+            <p><label>期刊</label><input type="text" name="lit_journal" id="lit_edit_journal"></p>
+            <p><label>DOI</label><input type="text" name="lit_doi" id="lit_edit_doi"></p>
+            <p><label>摘要</label><textarea name="lit_abstract" id="lit_edit_abstract" rows="4" required></textarea></p>
+            <p><label>全文（可选）</label><textarea name="lit_full_text" id="lit_edit_full_text" rows="4"></textarea></p>
+            <div class="button-row"><button class="btn btn-primary" type="submit">保存修改</button><button type="button" class="btn btn-secondary lit-edit-modal-close">取消</button></div>
+        </form>
+    </div>
+</div>
 
-            function closeModal(backdrop) {
-                backdrop.classList.remove('open');
-            }
+<!-- ═══ AI Import Modal ═══ -->
+<div id="aiImportBackdrop" class="modal-backdrop">
+    <div class="modal"><div class="modal-header"><div><h2 id="aiImportTitle">🤖 AI 导入</h2><p class="hint">粘贴文本或拖放文件，由 AI 自动提取结构化知识。</p></div><button type="button" class="btn btn-secondary ai-import-close">×</button></div>
+        <form id="aiImportForm" enctype="multipart/form-data">
+            <input type="hidden" id="ai_import_kg_id"><input type="hidden" id="ai_import_type">
+            <p><label>粘贴文本</label><textarea id="ai_import_text" rows="5" placeholder="在此粘贴需要提取的文本内容..."></textarea></p>
+            <p style="text-align:center;color:var(--muted);">— 或者 —</p>
+            <div id="aiDropZone" style="border:2px dashed var(--border);border-radius:12px;padding:28px;text-align:center;cursor:pointer;transition:all .2s;background:#fafbfc;">
+                <div style="font-size:32px;margin-bottom:6px;">📁</div>
+                <div id="aiDropLabel" style="font-size:14px;color:var(--muted);">拖放文件到此处，或点击选择</div>
+                <div id="aiDropFile" style="display:none;font-size:14px;color:var(--primary);margin-top:6px;"></div>
+                <input type="file" id="ai_import_file" accept=".pdf,.docx,.pptx,.txt,.doc,.ppt" style="display:none;">
+            </div>
+            <div class="button-row" style="margin-top:12px;">
+                <button class="btn btn-primary" type="button" id="aiImportStartBtn">🤖 开始 AI 分析</button>
+                <button type="button" class="btn btn-secondary ai-import-close">取消</button>
+            </div>
+            <p id="aiImportStatus" class="hint" style="margin-top:8px;"></p>
+            <div id="aiImportResult" style="display:none;margin-top:12px;padding:12px;border:1px solid var(--border);border-radius:8px;background:#f8fafc;max-height:300px;overflow:auto;"></div>
+        </form>
+    </div>
+</div>
 
-            function setEditableState(state, enabled) {
-                if (state.model) state.model.disabled = !enabled;
-                if (state.systemPrompt) state.systemPrompt.disabled = !enabled;
-                if (state.knowledge) state.knowledge.disabled = !enabled;
-                if (state.isActive) state.isActive.disabled = !enabled;
-                state.saveBtn.disabled = !enabled;
-            }
+<!-- ═══ Batch AI Import Modal (SSE progress) ═══ -->
+<div id="aiBatchBackdrop" class="modal-backdrop">
+    <div class="modal"><div class="modal-header"><div><h2 id="aiBatchTitle">📦 AI 批量导入</h2><p class="hint">支持多个文件或 .zip 压缩包（含 PDF/DOCX/PPTX/TXT），AI 逐个提取并入库。</p></div><button type="button" class="btn btn-secondary ai-batch-close" id="aiBatchCloseBtn">×</button></div>
+        <form id="aiBatchForm" enctype="multipart/form-data">
+            <input type="hidden" id="ai_batch_kg_id"><input type="hidden" id="ai_batch_type">
+            <div id="aiBatchDropZone" style="border:2px dashed var(--border);border-radius:12px;padding:28px;text-align:center;cursor:pointer;transition:all .2s;background:#fafbfc;">
+                <div style="font-size:32px;margin-bottom:6px;">📁</div>
+                <div id="aiBatchDropLabel">拖放文件或 .zip 到此处，或点击选择</div>
+                <div id="aiBatchFileList" style="text-align:left;font-size:13px;color:var(--muted);margin-top:8px;max-height:120px;overflow:auto;"></div>
+                <input type="file" id="ai_batch_file" accept=".pdf,.docx,.pptx,.txt,.zip" multiple style="display:none;">
+            </div>
+            <div class="button-row" style="margin-top:12px;">
+                <button class="btn btn-primary" type="button" id="aiBatchStartBtn">🤖 开始批量导入</button>
+                <button class="btn btn-danger" type="button" id="aiBatchStopBtn" style="display:none;">⏹ 停止</button>
+                <button type="button" class="btn btn-secondary ai-batch-close">取消</button>
+            </div>
+            <div id="aiBatchProgress" style="display:none;margin-top:12px;max-height:350px;overflow:auto;"></div>
+            <div id="aiBatchSummary" style="display:none;margin-top:8px;font-weight:600;"></div>
+        </form>
+    </div>
+</div>
 
-            function clearModelOptions(selectEl) {
-                if (selectEl) selectEl.innerHTML = '';
-            }
+<!-- Agent Legacy Create Modal -->
+<div id="agentLegacyModalBackdrop" class="modal-backdrop">
+    <div class="modal"><div class="modal-header"><div><h2>新建智能体（旧版）</h2><p class="hint">使用文本知识字段。如需知识图谱检索能力，请用左侧蓝色的"新建智能体+"。</p></div><button type="button" class="btn btn-secondary agent-legacy-modal-close">×</button></div>
+        <form method="POST" id="createAgentForm">{% csrf_token %}<input type="hidden" name="form_type" value="agent">
+            <p><label>智能体名称</label><input type="text" id="create_name" name="name" required></p>
+            <p><label>标识（slug）</label><input type="text" id="create_slug" name="slug" required></p>
+            <div class="button-row" style="align-items:flex-end;">
+                <p style="flex:1;margin:0;"><label>Ollama IP / 主机名</label><input type="text" id="create_ollama_host" name="ollama_host" value="127.0.0.1" required></p>
+                <p style="width:160px;margin:0;"><label>Ollama 端口</label><input type="number" id="create_ollama_port" name="ollama_port" value="11434" required></p>
+                <button class="btn btn-secondary" type="button" id="fetchCreateModelsBtn">获取模型</button>
+            </div>
+            <p id="createModelFetchStatus" class="hint">请先填写 Ollama 地址并点击"获取模型"。</p>
+            <p><label>Ollama 模型名</label><select id="create_ollama_model" name="ollama_model" disabled required></select></p>
+            <p><label>角色上下文（system context）</label><textarea id="create_system_prompt" name="system_prompt" disabled></textarea></p>
+            <p><label>参考知识（并入系统上下文）</label><textarea id="create_knowledge" name="knowledge" disabled></textarea></p>
+            <p><label style="display:flex;align-items:center;gap:8px;"><input type="checkbox" id="create_is_active" name="is_active" disabled checked>是否启用</label></p>
+            <div class="button-row"><button class="btn btn-primary" type="submit" id="saveCreateAgentBtn" disabled>保存智能体</button><button type="button" class="btn btn-secondary agent-legacy-modal-close">取消</button></div>
+        </form>
+    </div>
+</div>
 
-            function fillModelOptions(selectEl, models, selectedModel) {
-                clearModelOptions(selectEl);
-                models.forEach(function (modelName) {
-                    const option = document.createElement('option');
-                    option.value = modelName;
-                    option.textContent = modelName;
-                    selectEl.appendChild(option);
-                });
+<!-- Agent Legacy Edit Modal -->
+<div id="editAgentLegacyBackdrop" class="modal-backdrop">
+    <div class="modal"><div class="modal-header"><div><h2>编辑智能体（旧版）</h2></div><button type="button" class="btn btn-secondary edit-legacy-modal-close">×</button></div>
+        <form method="POST">{% csrf_token %}<input type="hidden" name="form_type" value="agent_edit"><input type="hidden" name="agent_id" id="edit_agent_id">
+            <p><label>智能体名称</label><input type="text" id="edit_name" name="name" required></p>
+            <p><label>标识（slug）</label><input type="text" id="edit_slug" name="slug" required></p>
+            <div class="button-row" style="align-items:flex-end;">
+                <p style="flex:1;margin:0;"><label>Ollama IP / 主机名</label><input type="text" id="edit_ollama_host" name="ollama_host" required></p>
+                <p style="width:160px;margin:0;"><label>Ollama 端口</label><input type="number" id="edit_ollama_port" name="ollama_port" required></p>
+                <button class="btn btn-secondary" type="button" id="fetchEditModelsBtn">获取模型</button>
+            </div>
+            <p id="editModelFetchStatus" class="hint">请先连接 Ollama 服务并获取模型列表。</p>
+            <p><label>Ollama 模型名</label><select id="edit_ollama_model" name="ollama_model" disabled required></select></p>
+            <p><label>角色上下文</label><textarea id="edit_system_prompt" name="system_prompt" disabled></textarea></p>
+            <p><label>参考知识</label><textarea id="edit_knowledge" name="knowledge" disabled></textarea></p>
+            <p><label style="display:flex;align-items:center;gap:8px;"><input type="checkbox" id="edit_is_active" name="is_active" disabled>是否启用</label></p>
+            <div class="button-row"><button class="btn btn-primary" type="submit" id="saveEditAgentBtn" disabled>保存修改</button><button type="button" class="btn btn-secondary edit-legacy-modal-close">取消</button></div>
+        </form>
+    </div>
+</div>
 
-                if (!models.length) {
-                    return;
-                }
+<!-- Agent KG Create Modal -->
+<div id="agentKgModalBackdrop" class="modal-backdrop">
+    <div class="modal"><div class="modal-header"><div><h2>新建智能体（知识图谱版）</h2><p class="hint">绑定知识图谱实现精准知识检索。不含文本知识字段。</p></div><button type="button" class="btn btn-secondary agent-kg-modal-close">×</button></div>
+        <form method="POST" id="createAgentKgForm">{% csrf_token %}<input type="hidden" name="form_type" value="agent_kg">
+            <p><label>智能体名称</label><input type="text" name="name" id="kg_create_name" required></p>
+            <p><label>标识（slug）</label><input type="text" name="slug" id="kg_create_slug" required></p>
+            <div class="button-row" style="align-items:flex-end;">
+                <p style="flex:1;margin:0;"><label>Ollama IP / 主机名</label><input type="text" name="ollama_host" id="kg_create_host" value="127.0.0.1" required></p>
+                <p style="width:160px;margin:0;"><label>Ollama 端口</label><input type="number" name="ollama_port" id="kg_create_port" value="11434" required></p>
+                <button class="btn btn-secondary" type="button" id="fetchKgCreateModelsBtn">获取模型</button>
+            </div>
+            <p id="kgCreateModelFetchStatus" class="hint">请先填写 Ollama 地址并点击"获取模型"。</p>
+            <p><label>Ollama 模型名</label><select name="ollama_model" id="kg_create_ollama_model" disabled required></select></p>
+            <p><label>角色上下文（system context）</label><textarea name="system_prompt" id="kg_create_system_prompt" disabled></textarea></p>
+            <p><label>选择知识图谱（可多选）</label></p>
+            <div class="checkbox-group" id="kg_create_graphs_checkboxes">
+                {% for kg in knowledge_graphs %}
+                <label><input type="checkbox" name="knowledge_graphs" value="{{ kg.id }}">{{ kg.name }}</label>
+                {% empty %}
+                <span class="hint">暂无可用知识图谱，请先创建知识图谱。</span>
+                {% endfor %}
+            </div>
+            <button type="button" id="kgSelectAllBtn" class="btn btn-outline" style="margin-top:6px;">一键全选</button>
+            <p style="margin-top:12px;"><label style="display:flex;align-items:center;gap:8px;"><input type="checkbox" name="is_active" id="kg_create_is_active" disabled checked>是否启用</label></p>
+            <div class="button-row"><button class="btn btn-primary" type="submit" id="saveCreateAgentKgBtn" disabled>保存智能体</button><button type="button" class="btn btn-secondary agent-kg-modal-close">取消</button></div>
+        </form>
+    </div>
+</div>
 
-                if (selectedModel && models.includes(selectedModel)) {
-                    selectEl.value = selectedModel;
-                } else {
-                    selectEl.selectedIndex = 0;
-                }
-            }
+<!-- Agent KG Edit Modal -->
+<div id="editAgentKgBackdrop" class="modal-backdrop">
+    <div class="modal"><div class="modal-header"><div><h2>编辑智能体（知识图谱版）</h2></div><button type="button" class="btn btn-secondary edit-kg-modal-close">×</button></div>
+        <form method="POST">{% csrf_token %}<input type="hidden" name="form_type" value="agent_kg_edit"><input type="hidden" name="agent_id" id="kg_edit_agent_id">
+            <p><label>智能体名称</label><input type="text" name="name" id="kg_edit_name" required></p>
+            <p><label>标识（slug）</label><input type="text" name="slug" id="kg_edit_slug" required></p>
+            <div class="button-row" style="align-items:flex-end;">
+                <p style="flex:1;margin:0;"><label>Ollama IP / 主机名</label><input type="text" name="ollama_host" id="kg_edit_host" required></p>
+                <p style="width:160px;margin:0;"><label>Ollama 端口</label><input type="number" name="ollama_port" id="kg_edit_port" required></p>
+                <button class="btn btn-secondary" type="button" id="fetchKgEditModelsBtn">获取模型</button>
+            </div>
+            <p id="kgEditModelFetchStatus" class="hint">请先连接 Ollama 服务并获取模型列表。</p>
+            <p><label>Ollama 模型名</label><select name="ollama_model" id="kg_edit_ollama_model" disabled required></select></p>
+            <p><label>角色上下文</label><textarea name="system_prompt" id="kg_edit_system_prompt" disabled></textarea></p>
+            <p><label>选择知识图谱（可多选）</label></p>
+            <div class="checkbox-group" id="kg_edit_graphs_checkboxes">
+                {% for kg in knowledge_graphs %}
+                <label><input type="checkbox" name="knowledge_graphs" value="{{ kg.id }}">{{ kg.name }}</label>
+                {% endfor %}
+            </div>
+            <button type="button" id="kgEditSelectAllBtn" class="btn btn-outline" style="margin-top:6px;">一键全选</button>
+            <p style="margin-top:12px;"><label style="display:flex;align-items:center;gap:8px;"><input type="checkbox" name="is_active" id="kg_edit_is_active" disabled>是否启用</label></p>
+            <div class="button-row"><button class="btn btn-primary" type="submit" id="saveEditAgentKgBtn" disabled>保存修改</button><button type="button" class="btn btn-secondary edit-kg-modal-close">取消</button></div>
+        </form>
+    </div>
+</div>
 
-            function renderSingleModelList(models) {
-                if (!models || !models.length) {
-                    singleState.listBox.innerHTML = '<span class="hint">未获取到可用模型。</span>';
-                    return;
-                }
-                singleState.listBox.innerHTML = '<ul style="margin:0; padding-left:18px;">' +
-                    models.map(function (modelName) {
-                        return `<li>${modelName}</li>`;
-                    }).join('') +
-                    '</ul>';
-            }
+<script>
+function getCookie(name){const v=(`; ${document.cookie}`).split(`; ${name}=`);if(v.length===2)return v.pop().split(';').shift();}
+(function(){
+    const modelApiUrl = "{% url 'ollama_models' %}";
 
-            async function fetchSingleModels() {
-                const host = singleState.host.value.trim();
-                const port = singleState.port.value.trim();
+    // ── Modal helpers ──
+    function openMod(bd) { bd.classList.add('open'); }
+    function closeMod(bd) { bd.classList.remove('open'); }
+    function bindModalClose(bd, btns) { btns.forEach(b => b && b.addEventListener('click', ()=>closeMod(bd))); }
+    function bindBackdropClick(bd) { bd.addEventListener('click', e => { if(e.target===bd) closeMod(bd); }); }
 
-                setEditableState(singleState, false);
-                renderSingleModelList([]);
+    // ── Single model ──
+    const s = {
+        host: document.getElementById('single_ollama_host'), port: document.getElementById('single_ollama_port'),
+        listBox: document.getElementById('singleModelList'), saveBtn: document.getElementById('saveSingleModelConfigBtn'),
+        fetchBtn: document.getElementById('fetchSingleModelsBtn'), status: document.getElementById('singleModelFetchStatus'),
+    };
+    function setS(enabled){ s.saveBtn.disabled=!enabled; }
+    async function fetchModelsRaw(host,port){
+        const r=await fetch(`${modelApiUrl}?host=${encodeURIComponent(host)}&port=${encodeURIComponent(port)}`);
+        return r.json();
+    }
+    async function fetchSingleModels(){
+        const host=s.host.value.trim(),port=s.port.value.trim(); setS(false); s.listBox.innerHTML='';
+        if(!host||!port){s.status.textContent='请先填写 Ollama IP 和端口。';return;}
+        s.status.textContent='正在连接...'; s.fetchBtn.disabled=true;
+        try{
+            const data=await fetchModelsRaw(host,port);
+            if(!data.ok) throw new Error(data.error||'');
+            if(!data.models||!data.models.length){s.status.textContent='未获取到模型。';s.fetchBtn.disabled=false;return;}
+            s.listBox.innerHTML='<ul style="margin:0;padding-left:18px;">'+data.models.map(m=>`<li>${m}</li>`).join('')+'</ul>';
+            setS(true); s.status.textContent='已获取，可保存。';
+        }catch(e){ s.status.textContent=`连接失败：${e.message}`; } finally { s.fetchBtn.disabled=false; }
+    }
+    s.fetchBtn.addEventListener('click',fetchSingleModels);
+    if(s.host.value&&s.port.value) fetchSingleModels();
 
-                if (!host || !port) {
-                    singleState.status.textContent = '请先填写 Ollama IP 和端口。';
-                    return false;
-                }
+    // ── Generic model fetcher for create/edit ──
+    function makeModelFetcher(hostEl,portEl,modelSel,sysPrompt,knownEl,isActiveEl,saveBtn,fetchBtn,statusEl){
+        function setEd(enabled){
+            modelSel.disabled=!enabled; if(sysPrompt)sysPrompt.disabled=!enabled;
+            if(knownEl)knownEl.disabled=!enabled; if(isActiveEl)isActiveEl.disabled=!enabled;
+            saveBtn.disabled=!enabled;
+        }
+        setEd(false);
+        async function fetchModels(selectedModel){
+            const host=hostEl.value.trim(),port=portEl.value.trim(); modelSel.innerHTML=''; setEd(false);
+            if(!host||!port){statusEl.textContent='请先填写 Ollama IP 和端口。';return;}
+            statusEl.textContent='正在连接...'; fetchBtn.disabled=true;
+            try{
+                const data=await fetchModelsRaw(host,port);
+                if(!data.ok) throw new Error(data.error||'');
+                if(!data.models||!data.models.length){statusEl.textContent='未获取到模型。';fetchBtn.disabled=false;return;}
+                data.models.forEach(m=>{const o=document.createElement('option');o.value=m;o.textContent=m;modelSel.appendChild(o);});
+                if(selectedModel&&data.models.includes(selectedModel)) modelSel.value=selectedModel;
+                else modelSel.selectedIndex=0;
+                setEd(true); statusEl.textContent=`已获取 ${data.models.length} 个模型。`;
+            }catch(e){statusEl.textContent=`连接失败：${e.message}`;} finally {fetchBtn.disabled=false;}
+        }
+        fetchBtn.addEventListener('click',()=>fetchModels(null));
+        return {fetchModels,setEd:setEd};
+    }
 
-                singleState.status.textContent = '正在连接 Ollama 并获取模型列表...';
-                singleState.fetchBtn.disabled = true;
+    // ── Legacy create ──
+    const legCreate=makeModelFetcher(
+        document.getElementById('create_ollama_host'),document.getElementById('create_ollama_port'),
+        document.getElementById('create_ollama_model'),document.getElementById('create_system_prompt'),
+        document.getElementById('create_knowledge'),document.getElementById('create_is_active'),
+        document.getElementById('saveCreateAgentBtn'),document.getElementById('fetchCreateModelsBtn'),
+        document.getElementById('createModelFetchStatus')
+    );
+    const legCreateBd=document.getElementById('agentLegacyModalBackdrop');
+    document.getElementById('openAgentLegacyModalBtn').addEventListener('click',()=>{
+        document.getElementById('create_name').value=''; document.getElementById('create_slug').value='';
+        document.getElementById('create_ollama_host').value='127.0.0.1'; document.getElementById('create_ollama_port').value='11434';
+        document.getElementById('create_system_prompt').value=''; document.getElementById('create_knowledge').value='';
+        document.getElementById('create_is_active').checked=true;
+        document.getElementById('create_ollama_model').innerHTML='';
+        legCreate.setEd(false); legCreateBd.querySelector('#createModelFetchStatus').textContent='请先获取模型。';
+        openMod(legCreateBd);
+    });
+    bindModalClose(legCreateBd, legCreateBd.querySelectorAll('.agent-legacy-modal-close'));
+    bindBackdropClick(legCreateBd);
 
-                try {
-                    const url = `${modelApiUrl}?host=${encodeURIComponent(host)}&port=${encodeURIComponent(port)}`;
-                    const response = await fetch(url, { method: 'GET' });
-                    const data = await response.json();
+    // ── Legacy edit ──
+    const legEdit=makeModelFetcher(
+        document.getElementById('edit_ollama_host'),document.getElementById('edit_ollama_port'),
+        document.getElementById('edit_ollama_model'),document.getElementById('edit_system_prompt'),
+        document.getElementById('edit_knowledge'),document.getElementById('edit_is_active'),
+        document.getElementById('saveEditAgentBtn'),document.getElementById('fetchEditModelsBtn'),
+        document.getElementById('editModelFetchStatus')
+    );
+    const legEditBd=document.getElementById('editAgentLegacyBackdrop');
+    document.querySelectorAll('.edit-agent-btn').forEach(btn=>{
+        btn.addEventListener('click',()=>{
+            document.getElementById('edit_agent_id').value=btn.dataset.agentId;
+            document.getElementById('edit_name').value=btn.dataset.agentName;
+            document.getElementById('edit_slug').value=btn.dataset.agentSlug;
+            document.getElementById('edit_ollama_host').value=btn.dataset.agentHost;
+            document.getElementById('edit_ollama_port').value=btn.dataset.agentPort;
+            document.getElementById('edit_system_prompt').value=btn.dataset.agentSystemPrompt;
+            document.getElementById('edit_knowledge').value=btn.dataset.agentKnowledge||'';
+            document.getElementById('edit_is_active').checked=(btn.dataset.agentActive==='true');
+            document.getElementById('edit_ollama_model').innerHTML='';
+            legEdit.setEd(false); legEditBd.querySelector('#editModelFetchStatus').textContent='正在获取模型...';
+            openMod(legEditBd);
+            legEdit.fetchModels(btn.dataset.agentModel);
+        });
+    });
+    bindModalClose(legEditBd, legEditBd.querySelectorAll('.edit-legacy-modal-close'));
+    bindBackdropClick(legEditBd);
 
-                    if (!response.ok || !data.ok) {
-                        throw new Error(data.error || '无法获取模型列表');
+    // ── KG create ──
+    const kgCreate=makeModelFetcher(
+        document.getElementById('kg_create_host'),document.getElementById('kg_create_port'),
+        document.getElementById('kg_create_ollama_model'),document.getElementById('kg_create_system_prompt'),
+        null,document.getElementById('kg_create_is_active'),
+        document.getElementById('saveCreateAgentKgBtn'),document.getElementById('fetchKgCreateModelsBtn'),
+        document.getElementById('kgCreateModelFetchStatus')
+    );
+    const kgCreateBd=document.getElementById('agentKgModalBackdrop');
+    document.getElementById('openAgentKgModalBtn').addEventListener('click',()=>{
+        document.getElementById('kg_create_name').value=''; document.getElementById('kg_create_slug').value='';
+        document.getElementById('kg_create_host').value='127.0.0.1'; document.getElementById('kg_create_port').value='11434';
+        document.getElementById('kg_create_system_prompt').value='';
+        document.getElementById('kg_create_is_active').checked=true;
+        document.getElementById('kg_create_ollama_model').innerHTML='';
+        kgCreateBd.querySelectorAll('.checkbox-group input[type="checkbox"]').forEach(cb=>cb.checked=false);
+        kgCreate.setEd(false); kgCreateBd.querySelector('#kgCreateModelFetchStatus').textContent='请先获取模型。';
+        openMod(kgCreateBd);
+    });
+    document.getElementById('kgSelectAllBtn').addEventListener('click',()=>{
+        kgCreateBd.querySelectorAll('.checkbox-group input[type="checkbox"]').forEach(cb=>cb.checked=true);
+    });
+    bindModalClose(kgCreateBd, kgCreateBd.querySelectorAll('.agent-kg-modal-close'));
+    bindBackdropClick(kgCreateBd);
+
+    // ── KG edit ──
+    const kgEditFetcher=makeModelFetcher(
+        document.getElementById('kg_edit_host'),document.getElementById('kg_edit_port'),
+        document.getElementById('kg_edit_ollama_model'),document.getElementById('kg_edit_system_prompt'),
+        null,document.getElementById('kg_edit_is_active'),
+        document.getElementById('saveEditAgentKgBtn'),document.getElementById('fetchKgEditModelsBtn'),
+        document.getElementById('kgEditModelFetchStatus')
+    );
+    const kgEditBd=document.getElementById('editAgentKgBackdrop');
+    document.querySelectorAll('.edit-agent-kg-btn').forEach(btn=>{
+        btn.addEventListener('click',()=>{
+            document.getElementById('kg_edit_agent_id').value=btn.dataset.agentId;
+            document.getElementById('kg_edit_name').value=btn.dataset.agentName;
+            document.getElementById('kg_edit_slug').value=btn.dataset.agentSlug;
+            document.getElementById('kg_edit_host').value=btn.dataset.agentHost;
+            document.getElementById('kg_edit_port').value=btn.dataset.agentPort;
+            document.getElementById('kg_edit_system_prompt').value=btn.dataset.agentSystemPrompt;
+            document.getElementById('kg_edit_is_active').checked=(btn.dataset.agentActive==='true');
+            const selectedIds=(btn.dataset.agentKgIds||'').split(',').filter(Boolean);
+            kgEditBd.querySelectorAll('.checkbox-group input[type="checkbox"]').forEach(cb=>{cb.checked=selectedIds.includes(cb.value);});
+            document.getElementById('kg_edit_ollama_model').innerHTML='';
+            kgEditFetcher.setEd(false); kgEditBd.querySelector('#kgEditModelFetchStatus').textContent='正在获取模型...';
+            openMod(kgEditBd);
+            kgEditFetcher.fetchModels(btn.dataset.agentModel);
+        });
+    });
+    document.getElementById('kgEditSelectAllBtn').addEventListener('click',()=>{
+        kgEditBd.querySelectorAll('.checkbox-group input[type="checkbox"]').forEach(cb=>cb.checked=true);
+    });
+    bindModalClose(kgEditBd, kgEditBd.querySelectorAll('.edit-kg-modal-close'));
+    bindBackdropClick(kgEditBd);
+
+    // ── KG create: model fetcher ──
+    const kgCreateEmbFetcher=makeModelFetcher(
+        document.getElementById('kg_create_host_emb'),document.getElementById('kg_create_port_emb'),
+        document.getElementById('kg_create_emb_model'),null,null,null,
+        document.getElementById('saveKgCreateBtn'),document.getElementById('fetchKgCreateModelsBtn'),
+        document.getElementById('kgCreateFetchStatus')
+    );
+    const kgCreateBdKg=document.getElementById('kgCreateBackdrop');
+    document.getElementById('openKgCreateModalBtn').addEventListener('click',()=>{
+        document.getElementById('kg_create_emb_model').innerHTML='';
+        document.getElementById('kg_create_ext_model').innerHTML='<option value="">不使用</option>';
+        kgCreateEmbFetcher.setEd(false); kgCreateBdKg.querySelector('#kgCreateFetchStatus').textContent='请先点击"获取 Embedding"。';
+        document.getElementById('kgCreateExtStatus').textContent='可选：点击"获取提取模型"拉取列表。';
+        openMod(kgCreateBdKg);
+    });
+    bindModalClose(kgCreateBdKg, kgCreateBdKg.querySelectorAll('.kg-modal-close'));
+    bindBackdropClick(kgCreateBdKg);
+
+    // ── KG edit: model fetcher ──
+    const kgEditEmbFetcher=makeModelFetcher(
+        document.getElementById('kg_edit_host_emb'),document.getElementById('kg_edit_port_emb'),
+        document.getElementById('kg_edit_emb_model'),null,null,null,
+        document.getElementById('saveKgEditBtn'),document.getElementById('fetchKgEditModelsBtn'),
+        document.getElementById('kgEditFetchStatus')
+    );
+    const kgEditBdKg=document.getElementById('kgEditBackdrop');
+    document.querySelectorAll('.kg-edit-btn').forEach(btn=>{
+        btn.addEventListener('click',()=>{
+            document.getElementById('kg_edit_id').value=btn.dataset.kgId;
+            document.getElementById('kg_edit_name_fld').value=btn.dataset.kgName;
+            document.getElementById('kg_edit_host_emb').value=btn.dataset.kgHost;
+            document.getElementById('kg_edit_port_emb').value=btn.dataset.kgPort;
+            document.getElementById('kg_edit_emb_model').innerHTML='';
+            document.getElementById('kg_edit_ext_model').innerHTML='<option value="">不使用</option>';
+            kgEditEmbFetcher.setEd(false);
+            kgEditBdKg.querySelector('#kgEditFetchStatus').textContent='正在获取模型...';
+            kgEditBdKg.querySelector('#kgEditExtStatus').textContent='点击"获取提取模型"拉取列表。';
+            document.getElementById('kg_edit_ext_model').dataset.savedModel = btn.dataset.kgExtModel || '';
+            openMod(kgEditBdKg);
+            kgEditEmbFetcher.fetchModels(btn.dataset.kgModel);
+        });
+    });
+    bindModalClose(kgEditBdKg, kgEditBdKg.querySelectorAll('.kg-edit-modal-close'));
+    bindBackdropClick(kgEditBdKg);
+
+    // ── KG create: extraction model fetcher (independent) ──
+    const kgCreateExtModel=document.getElementById('kg_create_ext_model');
+    const kgCreateExtBtn=document.getElementById('fetchKgCreateExtModelsBtn');
+    const kgCreateExtStatus=document.getElementById('kgCreateExtStatus');
+    kgCreateExtBtn.disabled=false; kgCreateExtModel.disabled=false;
+
+    kgCreateExtBtn.addEventListener('click',async()=>{
+        const host=document.getElementById('kg_create_host_emb').value.trim();
+        const port=document.getElementById('kg_create_port_emb').value.trim();
+        if(!host||!port){kgCreateExtStatus.textContent='请先填写主机和端口。';return;}
+        kgCreateExtBtn.disabled=true; kgCreateExtStatus.textContent='⏳ 正在获取...';
+        try{
+            const data=await fetchModelsRaw(host,port);
+            if(!data.ok||!data.models||!data.models.length)throw new Error(data.error||'无可用模型');
+            kgCreateExtModel.innerHTML='<option value="">不使用</option>';
+            data.models.forEach(m=>{const o=document.createElement('option');o.value=m;o.textContent=m;kgCreateExtModel.appendChild(o);});
+            kgCreateExtStatus.textContent=`✅ 已获取 ${data.models.length} 个模型。`;
+        }catch(e){kgCreateExtStatus.textContent=`❌ ${e.message}`;}finally{kgCreateExtBtn.disabled=false;}
+    });
+
+    // ── KG edit: extraction model fetcher (independent) ──
+    const kgEditExtModel=document.getElementById('kg_edit_ext_model');
+    const kgEditExtBtn=document.getElementById('fetchKgEditExtModelsBtn');
+    const kgEditExtStatus=document.getElementById('kgEditExtStatus');
+    kgEditExtBtn.disabled=false; kgEditExtModel.disabled=false;
+
+    kgEditExtBtn.addEventListener('click',async()=>{
+        const host=document.getElementById('kg_edit_host_emb').value.trim();
+        const port=document.getElementById('kg_edit_port_emb').value.trim();
+        if(!host||!port){kgEditExtStatus.textContent='请先填写主机和端口。';return;}
+        kgEditExtBtn.disabled=true; kgEditExtStatus.textContent='⏳ 正在获取...';
+        try{
+            const data=await fetchModelsRaw(host,port);
+            if(!data.ok||!data.models||!data.models.length)throw new Error(data.error||'无可用模型');
+            kgEditExtModel.innerHTML='<option value="">不使用</option>';
+            data.models.forEach(m=>{const o=document.createElement('option');o.value=m;o.textContent=m;kgEditExtModel.appendChild(o);});
+            const saved=kgEditExtModel.dataset.savedModel;
+            if(saved && data.models.includes(saved)) kgEditExtModel.value=saved;
+            kgEditExtStatus.textContent=`✅ 已获取 ${data.models.length} 个模型。`;
+        }catch(e){kgEditExtStatus.textContent=`❌ ${e.message}`;}finally{kgEditExtBtn.disabled=false;}
+    });
+
+    // ── RefCard create ──
+    const rcCreateBd=document.getElementById('rcCreateBackdrop');
+    document.querySelectorAll('.rc-create-btn').forEach(btn=>{
+        btn.addEventListener('click',()=>{
+            document.getElementById('rc_create_kg_id').value=btn.dataset.kgId;
+            openMod(rcCreateBd);
+        });
+    });
+    bindModalClose(rcCreateBd, rcCreateBd.querySelectorAll('.rc-modal-close'));
+    bindBackdropClick(rcCreateBd);
+
+    // ── RefCard edit ──
+    const rcEditBd=document.getElementById('rcEditBackdrop');
+    document.querySelectorAll('.rc-edit-btn').forEach(btn=>{
+        btn.addEventListener('click',()=>{
+            document.getElementById('rc_edit_id').value=btn.dataset.rcId;
+            document.getElementById('rc_edit_title').value=btn.dataset.rcTitle;
+            document.getElementById('rc_edit_keywords').value=btn.dataset.rcKeywords;
+            document.getElementById('rc_edit_category').value=btn.dataset.rcCategory;
+            document.getElementById('rc_edit_media_type').value=btn.dataset.rcMediaType;
+            document.getElementById('rc_edit_media_url').value=btn.dataset.rcMediaUrl;
+            document.getElementById('rc_edit_media_timespan').value=btn.dataset.rcMediaTimespan;
+            document.getElementById('rc_edit_key_points').value=btn.dataset.rcKeyPoints;
+            document.getElementById('rc_edit_sort_order').value=btn.dataset.rcSortOrder;
+            document.getElementById('rc_edit_kg_id').value=btn.closest('[id^="kg-section-"]')?.id?.replace('kg-section-','')||'';
+            openMod(rcEditBd);
+        });
+    });
+    bindModalClose(rcEditBd, rcEditBd.querySelectorAll('.rc-edit-modal-close'));
+    bindBackdropClick(rcEditBd);
+
+    // ── KnowledgeEntry create/edit ──
+    const keCreateBd=document.getElementById('keCreateBackdrop'), keEditBd=document.getElementById('keEditBackdrop');
+    document.querySelectorAll('.ke-create-btn').forEach(btn=>{ btn.addEventListener('click',()=>{ document.getElementById('ke_create_kg_id').value=btn.dataset.kgId; openMod(keCreateBd); }); });
+    bindModalClose(keCreateBd, keCreateBd.querySelectorAll('.ke-modal-close')); bindBackdropClick(keCreateBd);
+    document.querySelectorAll('.ke-edit-btn').forEach(btn=>{
+        btn.addEventListener('click',()=>{
+            document.getElementById('ke_edit_id').value=btn.dataset.keId;
+            document.getElementById('ke_edit_title').value=btn.dataset.keTitle;
+            document.getElementById('ke_edit_content').value=btn.dataset.keContent;
+            document.getElementById('ke_edit_source').value=btn.dataset.keSource;
+            document.getElementById('ke_edit_tags').value=btn.dataset.keTags;
+            document.getElementById('ke_edit_kg_id').value=btn.closest('[id^="kg-section-"]')?.id?.replace('kg-section-','')||'';
+            openMod(keEditBd);
+        });
+    });
+    bindModalClose(keEditBd, keEditBd.querySelectorAll('.ke-edit-modal-close')); bindBackdropClick(keEditBd);
+
+    // ── Literature create/edit ──
+    const litCreateBd=document.getElementById('litCreateBackdrop'), litEditBd=document.getElementById('litEditBackdrop');
+    document.querySelectorAll('.lit-create-btn').forEach(btn=>{ btn.addEventListener('click',()=>{ document.getElementById('lit_create_kg_id').value=btn.dataset.kgId; openMod(litCreateBd); }); });
+    bindModalClose(litCreateBd, litCreateBd.querySelectorAll('.lit-modal-close')); bindBackdropClick(litCreateBd);
+    document.querySelectorAll('.lit-edit-btn').forEach(btn=>{
+        btn.addEventListener('click',()=>{
+            document.getElementById('lit_edit_id').value=btn.dataset.litId;
+            document.getElementById('lit_edit_title').value=btn.dataset.litTitle;
+            document.getElementById('lit_edit_authors').value=btn.dataset.litAuthors;
+            document.getElementById('lit_edit_year').value=btn.dataset.litYear;
+            document.getElementById('lit_edit_journal').value=btn.dataset.litJournal;
+            document.getElementById('lit_edit_doi').value=btn.dataset.litDoi;
+            document.getElementById('lit_edit_abstract').value=btn.dataset.litAbstract;
+            document.getElementById('lit_edit_full_text').value=btn.dataset.litFullText;
+            document.getElementById('lit_edit_evidence').value=btn.dataset.litEvidence;
+            document.getElementById('lit_edit_kg_id').value=btn.closest('[id^="kg-section-"]')?.id?.replace('kg-section-','')||'';
+            openMod(litEditBd);
+        });
+    });
+    bindModalClose(litEditBd, litEditBd.querySelectorAll('.lit-edit-modal-close')); bindBackdropClick(litEditBd);
+
+    // ── AI Import ──
+    const aiBd=document.getElementById('aiImportBackdrop');
+    const aiTitle=document.getElementById('aiImportTitle');
+    const aiKgId=document.getElementById('ai_import_kg_id');
+    const aiType=document.getElementById('ai_import_type');
+    const aiText=document.getElementById('ai_import_text');
+    const aiFile=document.getElementById('ai_import_file');
+    const aiDropZone=document.getElementById('aiDropZone');
+    const aiDropLabel=document.getElementById('aiDropLabel');
+    const aiDropFile=document.getElementById('aiDropFile');
+    const aiStart=document.getElementById('aiImportStartBtn');
+    const aiStatus=document.getElementById('aiImportStatus');
+    const aiResult=document.getElementById('aiImportResult');
+
+    // ── Drag & drop ──
+    function updateDropFile(){if(aiFile.files.length){aiDropFile.textContent='📎 '+aiFile.files[0].name;aiDropFile.style.display='block';aiDropLabel.textContent='点击更换文件';}else{aiDropFile.style.display='none';aiDropLabel.textContent='拖放文件到此处，或点击选择';}}
+    aiDropZone.addEventListener('click',()=>aiFile.click());
+    aiFile.addEventListener('change',updateDropFile);
+    ['dragenter','dragover'].forEach(ev=>aiDropZone.addEventListener(ev,e=>{e.preventDefault();aiDropZone.style.borderColor='var(--primary)';aiDropZone.style.background='#eff6ff';}));
+    ['dragleave','drop'].forEach(ev=>aiDropZone.addEventListener(ev,e=>{e.preventDefault();aiDropZone.style.borderColor='var(--border)';aiDropZone.style.background='#fafbfc';}));
+    aiDropZone.addEventListener('drop',e=>{if(e.dataTransfer.files.length){aiFile.files=e.dataTransfer.files;updateDropFile();}});
+
+    const typeLabels={'reference_card':'流程指南卡','knowledge_entry':'专业知识条目','literature':'学术文献'};
+
+    document.querySelectorAll('.ai-import-btn').forEach(btn=>{
+        btn.addEventListener('click',()=>{
+            const type=btn.dataset.kgType;
+            aiKgId.value=btn.dataset.kgId; aiType.value=type;
+            aiTitle.textContent='🤖 AI 导入 — '+ (typeLabels[type]||type);
+            aiText.value=''; aiFile.value=''; aiDropFile.style.display='none'; aiDropLabel.textContent='拖放文件到此处，或点击选择'; aiDropZone.style.borderColor='var(--border)'; aiDropZone.style.background='#fafbfc'; aiStatus.textContent=''; aiResult.style.display='none';
+            openMod(aiBd);
+        });
+    });
+    bindModalClose(aiBd, aiBd.querySelectorAll('.ai-import-close'));
+    bindBackdropClick(aiBd);
+
+    aiStart.addEventListener('click',async()=>{
+        const text=aiText.value.trim();
+        if(!text && !aiFile.files.length){aiStatus.textContent='请粘贴文本或上传文件。';return;}
+        aiStart.disabled=true; aiStatus.textContent='⏳ AI 正在分析...'; aiResult.style.display='none';
+        try{
+            const fd=new FormData();
+            fd.append('kg_id',aiKgId.value); fd.append('knowledge_type',aiType.value);
+            if(aiFile.files.length) fd.append('file',aiFile.files[0]);
+            else fd.append('text',text);
+            const resp=await fetch('{% url "ai_extract" %}',{method:'POST',body:fd,headers:{'X-CSRFToken':getCookie('csrftoken')}});
+            const data=await resp.json();
+            if(!data.ok) throw new Error(data.error||'');
+            aiStatus.textContent='✅ 提取完成！点击下方按钮直接创建。';
+            aiResult.style.display='block';
+            const pretty=JSON.stringify(data.data,null,2);
+            aiResult.innerHTML='<pre style="white-space:pre-wrap;font-size:13px;margin:0;">'+pretty.replace(/</g,'&lt;')+'</pre>' +
+                '<button class="btn btn-primary" id="aiApplyBtn" style="margin-top:8px;">📋 创建并保存</button>' +
+                '<button class="btn btn-outline" id="aiRetryBtn" style="margin-top:8px;margin-left:6px;">🔄 重新分析</button>';
+            document.getElementById('aiApplyBtn').addEventListener('click',async()=>{
+                await createFromAiResult(data.data, aiType.value, aiKgId.value);
+            });
+            document.getElementById('aiRetryBtn').addEventListener('click',()=>{
+                aiResult.style.display='none'; aiStatus.textContent=''; aiStart.disabled=false;
+            });
+        }catch(e){aiStatus.textContent='❌ '+e.message;} finally {aiStart.disabled=false;}
+    });
+
+    function buildFormData(type, result, kgId){
+        const fd=new FormData(); fd.append('kg_id', kgId);
+        const typeMap={
+            'reference_card':{form_type:'kg_refcard_create',fields:{title:'rc_title',trigger_keywords:'rc_keywords',category:'rc_category',media_type:'rc_media_type',media_url:'rc_media_url',media_timespan:'rc_media_timespan',key_points:'rc_key_points'}, extra:()=>{if(result.sort_order!=null)fd.append('rc_sort_order',result.sort_order);fd.append('rc_key_points',JSON.stringify(result.key_points||[]));}},
+            'knowledge_entry':{form_type:'kg_knowledge_create',fields:{title:'ke_title',content:'ke_content',source:'ke_source',tags:'ke_tags'}},
+            'literature':{form_type:'kg_literature_create',fields:{title:'lit_title',authors:'lit_authors',year:'lit_year',journal:'lit_journal',doi:'lit_doi',abstract:'lit_abstract'}, extra:()=>{if(result.evidence_level!=null)fd.append('lit_evidence',result.evidence_level);if(result.full_text!=null)fd.append('lit_full_text',result.full_text);}},
+        };
+        const cfg=typeMap[type]; if(!cfg) return null;
+        fd.append('form_type',cfg.form_type);
+        for(const [aiKey, formName] of Object.entries(cfg.fields)){
+            const val=result[aiKey];
+            if(val!=null && val!=='') fd.append(formName, typeof val==='string'?val:String(val));
+        }
+        if(cfg.extra) cfg.extra();
+        return fd;
+    }
+
+    async function createFromAiResult(result, type, kgId){
+        const fd=buildFormData(type, result, kgId);
+        if(!fd){ aiStatus.textContent='❌ 不支持的知识类型。'; return; }
+        const applyBtn=document.getElementById('aiApplyBtn'); applyBtn.disabled=true; applyBtn.textContent='⏳ 正在保存...';
+        try{
+            const resp=await fetch('', {method:'POST', body:fd, headers:{'X-CSRFToken':getCookie('csrftoken')}});
+            if(!resp.ok){ const t=await resp.text(); throw new Error(t.substring(0,200)); }
+            aiStatus.textContent='✅ 保存成功！';
+            aiResult.style.display='none';
+            applyBtn.textContent='✅ 已保存'; applyBtn.className='btn btn-secondary';
+            // Show refresh button
+            const refreshBtn=document.createElement('button');
+            refreshBtn.className='btn btn-primary'; refreshBtn.textContent='🔄 刷新页面查看'; refreshBtn.style.marginTop='8px';
+            refreshBtn.addEventListener('click',()=>location.reload());
+            aiStatus.parentNode.insertBefore(refreshBtn, aiStatus.nextSibling);
+        }catch(e){
+            aiStatus.textContent='❌ 保存失败: '+e.message;
+            applyBtn.disabled=false; applyBtn.textContent='📋 重试保存';
+        }
+    }
+
+    // ── Batch AI Import (SSE progress) ──
+    const batchBd=document.getElementById('aiBatchBackdrop');
+    const batchKgId=document.getElementById('ai_batch_kg_id');
+    const batchType=document.getElementById('ai_batch_type');
+    const batchTitle=document.getElementById('aiBatchTitle');
+    const batchFile=document.getElementById('ai_batch_file');
+    const batchStart=document.getElementById('aiBatchStartBtn');
+    const batchStop=document.getElementById('aiBatchStopBtn');
+    const batchProgress=document.getElementById('aiBatchProgress');
+    const batchSummary=document.getElementById('aiBatchSummary');
+    const batchDropZone=document.getElementById('aiBatchDropZone');
+    const batchDropLabel=document.getElementById('aiBatchDropLabel');
+    const batchFileList=document.getElementById('aiBatchFileList');
+    const batchCloseBtn=document.getElementById('aiBatchCloseBtn');
+    const batchTypeLabels={reference_card:'流程指南卡',knowledge_entry:'专业知识条目',literature:'学术文献'};
+    let batchAbortController=null;
+
+    function updateBatchFileList(){
+        const files=batchFile.files;
+        if(!files.length){batchFileList.innerHTML='';batchDropLabel.textContent='拖放文件或 .zip 到此处，或点击选择';return;}
+        let html=''; for(let i=0;i<files.length;i++) html+=`<div>📎 ${files[i].name}</div>`;
+        batchFileList.innerHTML=html; batchDropLabel.textContent=`已选择 ${files.length} 个文件，点击更换`;
+    }
+    batchDropZone.addEventListener('click',()=>batchFile.click());
+    batchFile.addEventListener('change',updateBatchFileList);
+    ['dragenter','dragover'].forEach(ev=>batchDropZone.addEventListener(ev,e=>{e.preventDefault();batchDropZone.style.borderColor='var(--primary)';batchDropZone.style.background='#eff6ff';}));
+    ['dragleave','drop'].forEach(ev=>batchDropZone.addEventListener(ev,e=>{e.preventDefault();batchDropZone.style.borderColor='var(--border)';batchDropZone.style.background='#fafbfc';}));
+    batchDropZone.addEventListener('drop',e=>{if(e.dataTransfer.files.length){batchFile.files=e.dataTransfer.files;updateBatchFileList();}});
+
+    document.querySelectorAll('.ai-batch-btn').forEach(btn=>{
+        btn.addEventListener('click',()=>{
+            const type=btn.dataset.kgType||'reference_card';
+            batchKgId.value=btn.dataset.kgId; batchType.value=type;
+            batchTitle.textContent='📦 AI 批量导入 — '+(batchTypeLabels[type]||type);
+            batchFile.value=''; batchFileList.innerHTML=''; batchDropLabel.textContent='拖放文件或 .zip 到此处，或点击选择';
+            batchDropZone.style.borderColor='var(--border)'; batchDropZone.style.background='#fafbfc';
+            batchProgress.style.display='none'; batchProgress.innerHTML=''; batchSummary.style.display='none';
+            batchStart.style.display=''; batchStart.disabled=false; batchStop.style.display='none';
+            openMod(batchBd);
+        });
+    });
+    // Don't close on backdrop click during processing
+    batchCloseBtn.addEventListener('click',()=>{if(batchAbortController) batchAbortController.abort(); closeMod(batchBd);});
+    batchBd.querySelectorAll('.ai-batch-close').forEach(b=>b.addEventListener('click',()=>{if(batchAbortController) batchAbortController.abort(); closeMod(batchBd);}));
+
+    batchStop.addEventListener('click',()=>{if(batchAbortController){batchAbortController.abort();batchStop.style.display='none';batchStart.style.display='';batchStart.disabled=false;batchSummary.textContent='⏹ 已停止导入。';batchSummary.style.display='block';}});
+
+    batchStart.addEventListener('click',async()=>{
+        if(!batchFile.files.length){alert('请选择文件。');return;}
+        batchStart.style.display='none'; batchStop.style.display=''; batchSummary.style.display='none';
+        batchProgress.style.display='block';
+        // Build progress table
+        let progressHtml='<table style="width:100%;font-size:13px;"><thead><tr><th>#</th><th>文件</th><th>状态</th></tr></thead><tbody>';
+        for(let i=0;i<batchFile.files.length;i++) progressHtml+=`<tr id="batch-row-${i}"><td>${i+1}</td><td>${batchFile.files[i].name}</td><td>⏳ 等待...</td></tr>`;
+        progressHtml+='</tbody></table>'; batchProgress.innerHTML=progressHtml;
+
+        batchAbortController=new AbortController();
+        const fd=new FormData(); fd.append('kg_id',batchKgId.value); fd.append('knowledge_type',batchType.value);
+        for(const f of batchFile.files) fd.append('files',f);
+        try{
+            const resp=await fetch('{% url "ai_batch_stream" %}',{method:'POST',body:fd,headers:{'X-CSRFToken':getCookie('csrftoken')},signal:batchAbortController.signal});
+            const reader=resp.body.getReader(); const decoder=new TextDecoder(); let buf='';
+            while(true){
+                const{value,done}=await reader.read(); if(done) break;
+                buf+=decoder.decode(value,{stream:true});
+                const events=buf.split('\n\n'); buf=events.pop();
+                for(const e of events){
+                    const lines=e.split('\n'); if(lines.length<2) continue;
+                    const ev=lines[0].replace(/^event:\s*/,'').trim();
+                    const raw=lines.slice(1).join('\n').replace(/^data:\s*/,'').trim();
+                    let data; try{data=JSON.parse(raw);}catch{continue;}
+                    if(ev==='progress'){
+                        const row=document.getElementById('batch-row-'+(data.index-1));
+                        if(row){
+                            const statusCell=row.cells[2];
+                            if(data.status==='done'){statusCell.innerHTML='✅ <b>'+data.message+'</b>';row.style.background='#f0fdf4';}
+                            else if(data.status==='error'){statusCell.innerHTML='❌ '+data.message;row.style.background='#fef2f2';}
+                            else if(data.status==='processing'){statusCell.innerHTML='⏳ '+data.message;row.style.background='#eff6ff';}
+                        }
+                        // Refresh the KG section content in the background
+                        if(data.status==='done') refreshKgSection(batchKgId.value);
+                    }else if(ev==='done'){
+                        batchSummary.innerHTML=`✅ 完成：创建 ${data.created} 条，失败 ${data.errors} 条`+(data.cancelled?' ⏹ 已停止':'');
+                        batchSummary.style.display='block';
                     }
-
-                    if (!data.models || !data.models.length) {
-                        singleState.status.textContent = '已连接 Ollama，但未获取到可用模型，当前配置不会保存。';
-                        return false;
-                    }
-
-                    renderSingleModelList(data.models);
-                    setEditableState(singleState, true);
-                    singleState.status.textContent = `已获取 ${data.models.length} 个模型，可保存当前 IP 和端口配置。`;
-                    return true;
-                } catch (error) {
-                    singleState.status.textContent = `连接失败：${error.message}`;
-                    return false;
-                } finally {
-                    singleState.fetchBtn.disabled = false;
                 }
             }
+        }catch(e){if(e.name!=='AbortError') batchSummary.innerHTML='❌ '+e.message;batchSummary.style.display='block';}
+        finally{batchAbortController=null; batchStop.style.display='none'; batchStart.style.display=''; batchStart.disabled=false;}
+    });
 
-            async function fetchModels(state, selectedModel) {
-                const host = state.host.value.trim();
-                const port = state.port.value.trim();
+    // Background refresh: re-fetch the KG section content without page reload
+    async function refreshKgSection(kgId){
+        try{
+            const resp=await fetch(window.location.href,{headers:{'X-Requested-With':'XMLHttpRequest'}});
+            if(!resp.ok) return;
+            const html=await resp.text();
+            // Find the KG section in the new HTML and update the current page
+            const parser=new DOMParser(); const doc=parser.parseFromString(html,'text/html');
+            const newSection=doc.getElementById('kg-section-'+kgId);
+            const oldSection=document.getElementById('kg-section-'+kgId);
+            if(newSection && oldSection) oldSection.outerHTML=newSection.outerHTML;
+            // Re-bind event listeners for the new section
+            rebindKgSectionButtons();
+        }catch(e){}
+    }
+    function rebindKgSectionButtons(){
+        document.querySelectorAll('.rc-create-btn:not([data-bound])').forEach(btn=>{btn.dataset.bound='1'; btn.addEventListener('click',()=>{document.getElementById('rc_create_kg_id').value=btn.dataset.kgId; openMod(document.getElementById('rcCreateBackdrop'));});});
+        document.querySelectorAll('.ke-create-btn:not([data-bound])').forEach(btn=>{btn.dataset.bound='1'; btn.addEventListener('click',()=>{document.getElementById('ke_create_kg_id').value=btn.dataset.kgId; openMod(document.getElementById('keCreateBackdrop'));});});
+        document.querySelectorAll('.lit-create-btn:not([data-bound])').forEach(btn=>{btn.dataset.bound='1'; btn.addEventListener('click',()=>{document.getElementById('lit_create_kg_id').value=btn.dataset.kgId; openMod(document.getElementById('litCreateBackdrop'));});});
+        // Re-bind AI import buttons
+        document.querySelectorAll('.ai-import-btn:not([data-bound])').forEach(btn=>{btn.dataset.bound='1';
+            btn.addEventListener('click',()=>{const type=btn.dataset.kgType;aiKgId.value=btn.dataset.kgId;aiType.value=type;aiTitle.textContent='🤖 AI 导入 — '+(typeLabels[type]||type);aiText.value='';aiFile.value='';aiDropFile.style.display='none';aiDropLabel.textContent='拖放文件到此处，或点击选择';aiDropZone.style.borderColor='var(--border)';aiDropZone.style.background='#fafbfc';aiStatus.textContent='';aiResult.style.display='none';openMod(aiBd);});
+        });
+        // Re-bind batch buttons
+        document.querySelectorAll('.ai-batch-btn:not([data-bound])').forEach(btn=>{btn.dataset.bound='1';
+            btn.addEventListener('click',()=>{const type=btn.dataset.kgType||'reference_card';batchKgId.value=btn.dataset.kgId;batchType.value=type;batchTitle.textContent='📦 AI 批量导入 — '+(batchTypeLabels[type]||type);batchFile.value='';batchFileList.innerHTML='';batchDropLabel.textContent='拖放文件或 .zip 到此处，或点击选择';batchDropZone.style.borderColor='var(--border)';batchDropZone.style.background='#fafbfc';batchProgress.style.display='none';batchProgress.innerHTML='';batchSummary.style.display='none';batchStart.style.display='';batchStart.disabled=false;batchStop.style.display='none';openMod(batchBd);});
+        });
+        // Re-bind edit buttons
+        document.querySelectorAll('.rc-edit-btn:not([data-bound])').forEach(btn=>{btn.dataset.bound='1'; btn.addEventListener('click',()=>{document.getElementById('rc_edit_id').value=btn.dataset.rcId;document.getElementById('rc_edit_title').value=btn.dataset.rcTitle;document.getElementById('rc_edit_keywords').value=btn.dataset.rcKeywords;document.getElementById('rc_edit_category').value=btn.dataset.rcCategory;document.getElementById('rc_edit_media_type').value=btn.dataset.rcMediaType;document.getElementById('rc_edit_media_url').value=btn.dataset.rcMediaUrl;document.getElementById('rc_edit_media_timespan').value=btn.dataset.rcMediaTimespan;document.getElementById('rc_edit_key_points').value=btn.dataset.rcKeyPoints;document.getElementById('rc_edit_sort_order').value=btn.dataset.rcSortOrder;document.getElementById('rc_edit_kg_id').value=btn.closest('[id^="kg-section-"]')?.id?.replace('kg-section-','')||'';openMod(document.getElementById('rcEditBackdrop'));});});
+        document.querySelectorAll('.ke-edit-btn:not([data-bound])').forEach(btn=>{btn.dataset.bound='1'; btn.addEventListener('click',()=>{document.getElementById('ke_edit_id').value=btn.dataset.keId;document.getElementById('ke_edit_title').value=btn.dataset.keTitle;document.getElementById('ke_edit_content').value=btn.dataset.keContent;document.getElementById('ke_edit_source').value=btn.dataset.keSource;document.getElementById('ke_edit_tags').value=btn.dataset.keTags;document.getElementById('ke_edit_kg_id').value=btn.closest('[id^="kg-section-"]')?.id?.replace('kg-section-','')||'';openMod(document.getElementById('keEditBackdrop'));});});
+        document.querySelectorAll('.lit-edit-btn:not([data-bound])').forEach(btn=>{btn.dataset.bound='1'; btn.addEventListener('click',()=>{document.getElementById('lit_edit_id').value=btn.dataset.litId;document.getElementById('lit_edit_title').value=btn.dataset.litTitle;document.getElementById('lit_edit_authors').value=btn.dataset.litAuthors;document.getElementById('lit_edit_year').value=btn.dataset.litYear;document.getElementById('lit_edit_journal').value=btn.dataset.litJournal;document.getElementById('lit_edit_doi').value=btn.dataset.litDoi;document.getElementById('lit_edit_abstract').value=btn.dataset.litAbstract;document.getElementById('lit_edit_full_text').value=btn.dataset.litFullText;document.getElementById('lit_edit_evidence').value=btn.dataset.litEvidence;document.getElementById('lit_edit_kg_id').value=btn.closest('[id^="kg-section-"]')?.id?.replace('kg-section-','')||'';openMod(document.getElementById('litEditBackdrop'));});});
+    }
 
-                clearModelOptions(state.model);
-                setEditableState(state, false);
-
-                if (!host || !port) {
-                    state.status.textContent = '请先填写 Ollama IP 和端口。';
-                    return false;
-                }
-
-                state.status.textContent = '正在连接 Ollama 并获取模型列表...';
-                state.fetchBtn.disabled = true;
-
-                try {
-                    const url = `${modelApiUrl}?host=${encodeURIComponent(host)}&port=${encodeURIComponent(port)}`;
-                    const response = await fetch(url, { method: 'GET' });
-                    const data = await response.json();
-
-                    if (!response.ok || !data.ok) {
-                        throw new Error(data.error || '无法获取模型列表');
-                    }
-
-                    if (!data.models || !data.models.length) {
-                        state.status.textContent = '未获取到可用模型，后续字段已锁定。';
-                        return false;
-                    }
-
-                    fillModelOptions(state.model, data.models, selectedModel);
-                    setEditableState(state, true);
-
-                    if (selectedModel && !data.models.includes(selectedModel)) {
-                        state.status.textContent = '当前已保存模型不在远端列表中，已自动切换为第一个可用模型。';
-                    } else {
-                        state.status.textContent = `已获取 ${data.models.length} 个模型。`;
-                    }
-                    return true;
-                } catch (error) {
-                    state.status.textContent = `连接失败：${error.message}`;
-                    return false;
-                } finally {
-                    state.fetchBtn.disabled = false;
-                }
-            }
-
-            function resetCreateModal() {
-                createState.name.value = '';
-                createState.slug.value = '';
-                createState.host.value = '127.0.0.1';
-                createState.port.value = '11434';
-                createState.systemPrompt.value = '';
-                createState.knowledge.value = '';
-                createState.isActive.checked = true;
-                createState.status.textContent = '请先填写 Ollama 地址并点击“获取模型”。';
-                if (createState.templateSelect) createState.templateSelect.value = '';
-                clearModelOptions(createState.model);
-                setEditableState(createState, false);
-            }
-
-            function getAgentTemplateMap() {
-                const map = {};
-                editButtons.forEach(function (btn) {
-                    map[btn.dataset.agentId] = {
-                        id: btn.dataset.agentId || '',
-                        name: btn.dataset.agentName || '',
-                        slug: btn.dataset.agentSlug || '',
-                        host: btn.dataset.agentHost || '',
-                        port: btn.dataset.agentPort || '',
-                        model: btn.dataset.agentModel || '',
-                        systemPrompt: btn.dataset.agentSystemPrompt || '',
-                        knowledge: btn.dataset.agentKnowledge || '',
-                        isActive: btn.dataset.agentActive === 'true',
-                    };
-                });
-                return map;
-            }
-
-            const agentTemplateMap = getAgentTemplateMap();
-
-            async function applyCreateTemplate() {
-                const templateId = createState.templateSelect ? createState.templateSelect.value : '';
-                if (!templateId) {
-                    resetCreateModal();
-                    return;
-                }
-
-                const template = agentTemplateMap[templateId];
-                if (!template) {
-                    createState.status.textContent = '未找到所选模板智能体。';
-                    return;
-                }
-
-                createState.name.value = '';
-                createState.slug.value = '';
-                createState.host.value = template.host || '127.0.0.1';
-                createState.port.value = template.port || '11434';
-                createState.systemPrompt.value = template.systemPrompt || '';
-                createState.knowledge.value = template.knowledge || '';
-                createState.isActive.checked = template.isActive;
-                createState.status.textContent = `已加载模板：${template.name}。正在同步该模板对应的模型列表...`;
-                await fetchModels(createState, template.model || '');
-            }
-
-            setEditableState(singleState, false);
-            renderSingleModelList([]);
-            if (singleState.host.value && singleState.port.value) {
-                fetchSingleModels();
-            }
-
-            openCreateBtn.addEventListener('click', function () {
-                resetCreateModal();
-                openModal(createBackdrop);
-            });
-            closeCreateBtn.addEventListener('click', function () {
-                closeModal(createBackdrop);
-            });
-            cancelCreateBtn.addEventListener('click', function () {
-                closeModal(createBackdrop);
-            });
-
-            closeEditBtn.addEventListener('click', function () {
-                closeModal(editBackdrop);
-            });
-            cancelEditBtn.addEventListener('click', function () {
-                closeModal(editBackdrop);
-            });
-
-            singleState.fetchBtn.addEventListener('click', function () {
-                fetchSingleModels();
-            });
-
-            createState.fetchBtn.addEventListener('click', function () {
-                fetchModels(createState, null);
-            });
-
-            if (createState.applyTemplateBtn) {
-                createState.applyTemplateBtn.addEventListener('click', function () {
-                    applyCreateTemplate();
-                });
-            }
-
-            editState.fetchBtn.addEventListener('click', function () {
-                fetchModels(editState, editState.model.dataset.currentValue || '');
-            });
-
-            editButtons.forEach(function (btn) {
-                btn.addEventListener('click', async function () {
-                    document.getElementById('edit_agent_id').value = btn.dataset.agentId || '';
-                    document.getElementById('edit_name').value = btn.dataset.agentName || '';
-                    document.getElementById('edit_slug').value = btn.dataset.agentSlug || '';
-                    document.getElementById('edit_ollama_host').value = btn.dataset.agentHost || '';
-                    document.getElementById('edit_ollama_port').value = btn.dataset.agentPort || '';
-                    document.getElementById('edit_system_prompt').value = btn.dataset.agentSystemPrompt || '';
-                    document.getElementById('edit_knowledge').value = btn.dataset.agentKnowledge || '';
-                    document.getElementById('edit_is_active').checked = (btn.dataset.agentActive === 'true');
-                    document.getElementById('edit_ollama_model').dataset.currentValue = btn.dataset.agentModel || '';
-
-                    clearModelOptions(editState.model);
-                    setEditableState(editState, false);
-                    editState.status.textContent = '正在根据当前 Ollama 地址获取模型列表...';
-                    openModal(editBackdrop);
-                    await fetchModels(editState, btn.dataset.agentModel || '');
-                });
-            });
-
-            [createBackdrop, editBackdrop].forEach(function (backdrop) {
-                backdrop.addEventListener('click', function (event) {
-                    if (event.target === backdrop) {
-                        closeModal(backdrop);
-                    }
-                });
-            });
-
-            document.addEventListener('keydown', function (event) {
-                if (event.key === 'Escape') {
-                    closeModal(createBackdrop);
-                    closeModal(editBackdrop);
-                }
-            });
-        })();
-    </script>
+    // ── Escape key closes all ──
+    document.addEventListener('keydown',e=>{
+        if(e.key==='Escape') document.querySelectorAll('.modal-backdrop.open').forEach(bd=>closeMod(bd));
+    });
+})();
+</script>
 </body>
 </html>

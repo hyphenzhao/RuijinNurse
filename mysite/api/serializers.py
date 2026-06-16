@@ -13,15 +13,10 @@ class AgentSerializer(serializers.ModelSerializer):
     class Meta:
         model = Agent
         fields = [
-            'id',
-            'name',
-            'slug',
-            'ollama_host',
-            'ollama_port',
-            'ollama_model',
-            'system_prompt',
-            'knowledge',
-            'is_active',
+            'id', 'name', 'slug',
+            'ollama_host', 'ollama_port', 'ollama_model',
+            'system_prompt', 'knowledge', 'is_active',
+            'agent_type', 'is_default',
         ]
         read_only_fields = ['id']
 

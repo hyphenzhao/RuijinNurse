@@ -454,5 +454,449 @@ def extract_text_from_upload(uploaded_file):
             texts.append(txt)
         return "\n".join(texts)
 
+    elif ext == '.txt':
+        return uploaded_file.read().decode('utf-8', errors='replace')
+
     else:
         raise ValueError(f"不支持的文件类型: {ext}")
+
+
+def extract_files_from_upload(uploaded_files):
+    """Extract text from multiple uploaded files and/or zip archives.
+
+    Returns a list of dicts: [{'filename': str, 'text': str, 'error': str|None}]
+    """
+    import zipfile, io, os, tempfile
+
+    results = []
+
+    for uploaded_file in uploaded_files:
+        fname = uploaded_file.name.lower()
+        try:
+            if fname.endswith('.zip'):
+                # Extract zip and process each file inside
+                with zipfile.ZipFile(uploaded_file) as zf:
+                    for member in zf.namelist():
+                        # Skip directories and hidden files
+                        if member.endswith('/') or os.path.basename(member).startswith('.'):
+                            continue
+                        ext = os.path.splitext(member)[1].lower()
+                        if ext not in ('.pdf', '.docx', '.pptx', '.txt', '.doc', '.ppt'):
+                            continue
+                        try:
+                            inner_bytes = zf.read(member)
+                            inner_text = _extract_bytes(inner_bytes, os.path.basename(member))
+                            results.append({'filename': member, 'text': inner_text, 'error': None})
+                        except Exception as e:
+                            results.append({'filename': member, 'text': '', 'error': str(e)})
+            else:
+                text = extract_text_from_upload(uploaded_file)
+                results.append({'filename': uploaded_file.name, 'text': text, 'error': None})
+        except Exception as e:
+            results.append({'filename': uploaded_file.name, 'text': '', 'error': str(e)})
+
+    return results
+
+
+def _extract_bytes(data: bytes, filename: str) -> str:
+    """Extract text from in-memory bytes given a filename (used for zip members)."""
+    import io, os
+    ext = os.path.splitext(filename)[1].lower()
+
+    if ext == '.txt':
+        return data.decode('utf-8', errors='replace')
+    elif ext == '.pdf':
+        from PyPDF2 import PdfReader
+        reader = PdfReader(io.BytesIO(data))
+        return "\n".join(p.extract_text() or "" for p in reader.pages)
+    elif ext == '.docx':
+        from docx import Document
+        doc = Document(io.BytesIO(data))
+        return "\n".join(p.text for p in doc.paragraphs)
+    elif ext == '.pptx':
+        from pptx import Presentation
+        prs = Presentation(io.BytesIO(data))
+        texts = []
+        for slide in prs.slides:
+            for shape in slide.shapes:
+                if hasattr(shape, "text"):
+                    texts.append(shape.text)
+        return "\n".join(texts)
+    else:
+        return data.decode('utf-8', errors='replace')
+
+
+# ══════════════════════════════════════════════════════════════
+#  Knowledge Graph RAG — intent routing + retrieval
+# ══════════════════════════════════════════════════════════════
+
+def route_and_retrieve(agent, user_query):
+    """Two-stage routing for knowledge-graph agents.
+
+    Stage 1: keyword match against ReferenceCards.
+    Stage 2: semantic search against KnowledgeEntries.
+
+    Returns a dict:
+      {'route': 'reference_card', 'card': <ReferenceCard>, 'context': <str>}
+      {'route': 'rag', 'context': <str>}
+      {'route': 'none', 'context': ''}
+    """
+    if not agent or agent.agent_type != 'kg':
+        return {'route': 'none', 'context': ''}
+
+    kgs = agent.knowledge_graphs.filter(is_active=True)
+    if not kgs.exists():
+        return {'route': 'none', 'context': ''}
+
+    # Stage 1: try ReferenceCard exact/keyword match across all bound KGs
+    best_card = None
+    best_score = 0
+    for kg in kgs:
+        card, score = match_reference_card(kg, user_query)
+        if card and score > best_score:
+            best_card = card
+            best_score = score
+
+    if best_card and best_score > 0.5:
+        return {
+            'route': 'reference_card',
+            'card': best_card,
+            'context': format_reference_card(best_card),
+        }
+
+    # Stage 2: full-text search on KnowledgeEntries
+    knowledge_chunks = []
+    for kg in kgs:
+        chunks = semantic_search_knowledge(kg, user_query, top_k=3)
+        knowledge_chunks.extend(chunks)
+
+    # Also search literature if the query looks academic
+    if _is_research_query(user_query):
+        lit_chunks = []
+        for kg in kgs:
+            chunks = semantic_search_literature(kg, user_query, top_k=2)
+            lit_chunks.extend(chunks)
+        knowledge_chunks.extend(lit_chunks)
+
+    if knowledge_chunks:
+        context = _build_rag_context(knowledge_chunks)
+        return {'route': 'rag', 'context': context}
+
+    return {'route': 'none', 'context': ''}
+
+
+def match_reference_card(knowledge_graph, user_query):
+    """Keyword-based matching for ReferenceCards.
+
+    Returns (card, confidence) where confidence is 0.0-1.0.
+    Higher confidence = more keyword overlap + shorter card = better match.
+    """
+    from .models import ReferenceCard
+
+    query_lower = user_query.lower()
+    query_chars = set(query_lower)
+
+    best_card = None
+    best_score = 0.0
+
+    for card in knowledge_graph.reference_cards.filter(is_active=True):
+        if not card.trigger_keywords:
+            continue
+
+        keywords = [kw.strip().lower() for kw in card.trigger_keywords.split('\n') if kw.strip()]
+        if not keywords:
+            continue
+
+        match_count = 0
+        for kw in keywords:
+            if kw in query_lower:
+                match_count += 1
+            else:
+                # Partial character overlap for Chinese
+                kw_chars = set(kw)
+                if len(kw_chars & query_chars) >= max(2, len(kw_chars) * 0.6):
+                    match_count += 0.5
+
+        if match_count == 0:
+            continue
+
+        # Score: matches / sqrt(num_keywords) — rewards high match ratio
+        score = match_count / max(1, len(keywords) ** 0.5)
+
+        if score > best_score:
+            best_score = score
+            best_card = card
+
+    return best_card, best_score
+
+
+def semantic_search_knowledge(knowledge_graph, user_query, top_k=3):
+    """Full-text search on KnowledgeEntries.
+
+    Uses simple word-overlap scoring (suitable for Chinese text).
+    """
+    from .models import KnowledgeEntry
+
+    query_lower = user_query.lower()
+    query_words = set(query_lower)
+
+    entries = knowledge_graph.knowledge_entries.filter(is_active=True)
+    if not entries.exists():
+        return []
+
+    scored = []
+    for entry in entries:
+        content_lower = entry.content.lower()
+        # Word overlap score
+        score = len(query_words & set(content_lower))
+        # Bonus for title match
+        if entry.title.lower() in query_lower or any(w in entry.title.lower() for w in query_words if len(w) > 1):
+            score += 3
+        # Bonus for tag match
+        if entry.tags:
+            tag_words = set(entry.tags.lower().replace(',', ' ').split())
+            score += len(query_words & tag_words) * 2
+        if score > 0:
+            scored.append((score, entry))
+
+    scored.sort(key=lambda x: x[0], reverse=True)
+    return [{'title': entry.title, 'content': entry.content, 'source': entry.source}
+            for _, entry in scored[:top_k]]
+
+
+def semantic_search_literature(knowledge_graph, user_query, top_k=2):
+    """Full-text search on LiteratureEntry abstracts."""
+    from .models import LiteratureEntry
+
+    query_lower = user_query.lower()
+    query_words = set(query_lower)
+
+    entries = knowledge_graph.literature.filter(is_active=True)
+    if not entries.exists():
+        return []
+
+    scored = []
+    for entry in entries:
+        abstract_lower = entry.abstract.lower()
+        score = len(query_words & set(abstract_lower))
+        title_lower = entry.title.lower()
+        score += len(query_words & set(title_lower)) * 2
+        if score > 0:
+            scored.append((score, entry))
+
+    scored.sort(key=lambda x: x[0], reverse=True)
+    return [{'title': entry.title, 'content': entry.abstract,
+             'source': f'{entry.journal}, {entry.year}' if entry.year else entry.journal,
+             'evidence_level': entry.evidence_level}
+            for _, entry in scored[:top_k]]
+
+
+def format_reference_card(card):
+    """Format a ReferenceCard as a structured context string for the LLM."""
+    lines = [f'【宣教指南】{card.title}']
+    if card.media_type != 'none' and card.media_url:
+        video_line = f'[{card.title}]({card.media_url})'
+        lines.append(f'📹 宣教视频（请在回复中以此 Markdown 链接格式提供）：{video_line}')
+        if card.media_timespan:
+            lines.append(f'   视频时间段：{card.media_timespan}')
+    if card.key_points:
+        lines.append('📋 要点摘要（请在回复中列出）：')
+        for kp in card.key_points:
+            label = kp.get('label', '')
+            text = kp.get('text', '')
+            if label:
+                lines.append(f'  - {label}：{text}')
+            else:
+                lines.append(f'  - {text}')
+    # Add explicit instruction for the LLM
+    if card.media_type != 'none' and card.media_url:
+        lines.append('\n⚠️ 重要：请在回复中务必包含上述视频链接（使用 Markdown 链接格式 [标题](URL)），让用户可以直接点击观看。同时列出要点摘要。')
+    else:
+        lines.append('\n请在回复中列出上述要点摘要，帮助用户快速理解。')
+    return '\n'.join(lines)
+
+
+def _build_rag_context(chunks):
+    """Build a combined context string from retrieval results."""
+    parts = []
+    for i, chunk in enumerate(chunks, 1):
+        src = chunk.get('source', '')
+        title = chunk.get('title', '')
+        content = chunk.get('content', '')
+        evidence = chunk.get('evidence_level', '')
+        header = f'【参考资料 {i}】{title}'
+        if src:
+            header += f'（来源：{src}）'
+        if evidence:
+            header += f' [证据等级：{evidence}]'
+        parts.append(f'{header}\n{content}')
+    return '\n\n'.join(parts)
+
+
+def _is_research_query(user_query):
+    """Heuristic: does the query look like an academic/research question?"""
+    research_keywords = [
+        '研究', '文献', '证据', '论文', '临床试验', 'meta', '综述',
+        '最新', '进展', '指南', '共识', 'RCT', '系统评价',
+    ]
+    query_lower = user_query.lower()
+    return any(kw in query_lower for kw in research_keywords)
+
+
+# ══════════════════════════════════════════════════════════════
+#  AI Extraction — call Ollama to parse unstructured text
+# ══════════════════════════════════════════════════════════════
+
+_EXTRACTION_PROMPTS = {
+    'reference_card': """你是一个医疗知识提取助手。请从以下文本中提取"流程指南卡"的结构化信息。
+严格返回 JSON 格式（不要 markdown 代码块），字段如下：
+{
+  "title": "指南标题",
+  "trigger_keywords": "关键词1\\n关键词2\\n关键词3",
+  "category": "admission/discharge/medication/rehab/diet/safety/followup/general 之一",
+  "media_type": "video/image/pdf/none 之一",
+  "media_url": "视频或图片链接（如有）",
+  "media_timespan": "时间区间如 00:09-01:39（如有）",
+  "key_points": [{"label": "要点标题", "text": "要点内容"}]
+}""",
+
+    'knowledge_entry': """你是一个医疗知识提取助手。请从以下文本中提取"专业知识条目"的结构化信息。
+严格返回 JSON 格式（不要 markdown 代码块），字段如下：
+{
+  "title": "知识条目标题（简洁概括）",
+  "content": "知识内容（保留原文关键信息，适当精炼）",
+  "source": "知识来源（如有）",
+  "tags": "标签1,标签2,标签3"
+}""",
+
+    'literature': """你是一个学术文献分析助手。请从以下文本中提取"学术文献"的结构化信息。
+严格返回 JSON 格式（不要 markdown 代码块），字段如下：
+{
+  "title": "文献标题",
+  "authors": "作者（逗号分隔）",
+  "year": 年份数字（如有）,
+  "journal": "期刊名称（如有）",
+  "doi": "DOI（如有）",
+  "abstract": "摘要内容",
+  "evidence_level": "A/B/C/D 或空字符串"
+}""",
+}
+
+
+_BATCH_REFERENCE_CARD_PROMPT = """你是一个医疗知识提取助手。请从以下文本中提取所有"流程指南卡"。
+文本可能包含多个独立主题的指南（如住院手续、病区环境、出院流程等），请为每个主题生成一张指南卡。
+严格返回 JSON 数组格式（不要 markdown 代码块），每项字段如下：
+[{
+  "title": "指南标题",
+  "trigger_keywords": "关键词1\\n关键词2\\n关键词3",
+  "category": "admission/discharge/medication/rehab/diet/safety/followup/general 之一",
+  "media_type": "video/image/pdf/none 之一",
+  "media_url": "视频或图片链接（如有）",
+  "media_timespan": "时间区间如 00:09-01:39（如有）",
+  "key_points": [{"label": "要点标题", "text": "要点内容"}]
+}]"""
+
+
+def ai_extract_knowledge_batch(knowledge_graph, raw_text):
+    """Batch extract multiple ReferenceCards from raw text."""
+    if not knowledge_graph.extraction_model:
+        return False, '该知识图谱未配置 AI 提取模型。'
+
+    base_url = f'http://{knowledge_graph.ollama_host}:{knowledge_graph.ollama_port}'
+    prompt = f'{_BATCH_REFERENCE_CARD_PROMPT}\n\n---\n待提取文本：\n{raw_text[:10000]}'
+
+    try:
+        resp = requests.post(
+            f'{base_url}/api/chat',
+            json={
+                'model': knowledge_graph.extraction_model,
+                'messages': [{'role': 'user', 'content': prompt}],
+                'stream': False,
+            },
+            timeout=180,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        content = data.get('message', {}).get('content', '').strip()
+
+        if content.startswith('```'):
+            content = re.sub(r'^```(?:json)?\s*', '', content)
+            content = re.sub(r'\s*```$', '', content)
+
+        try:
+            result = json.loads(content)
+        except json.JSONDecodeError:
+            match = re.search(r'\[[\s\S]*\]', content)
+            if match:
+                result = json.loads(match.group(0))
+            else:
+                return False, f'AI 返回无法解析为 JSON: {content[:200]}...'
+
+        if not isinstance(result, list):
+            result = [result]
+        return True, result
+
+    except requests.RequestException as e:
+        return False, f'连接 Ollama 失败: {type(e).__name__}: {e}'
+    except Exception as e:
+        return False, f'AI 批量提取失败: {type(e).__name__}: {e}'
+
+
+def ai_extract_knowledge(knowledge_graph, knowledge_type, raw_text):
+    """Call Ollama extraction model to parse unstructured text into structured JSON.
+
+    Args:
+        knowledge_graph: KnowledgeGraph instance
+        knowledge_type: 'reference_card' | 'knowledge_entry' | 'literature'
+        raw_text: raw text to extract from
+
+    Returns:
+        (success: bool, data: dict | error_message: str)
+    """
+    if not knowledge_graph.extraction_model:
+        return False, '该知识图谱未配置 AI 提取模型。'
+
+    prompt_template = _EXTRACTION_PROMPTS.get(knowledge_type)
+    if not prompt_template:
+        return False, f'不支持的知识类型: {knowledge_type}'
+
+    base_url = f'http://{knowledge_graph.ollama_host}:{knowledge_graph.ollama_port}'
+    prompt = f'{prompt_template}\n\n---\n待提取文本：\n{raw_text[:8000]}'
+
+    try:
+        resp = requests.post(
+            f'{base_url}/api/chat',
+            json={
+                'model': knowledge_graph.extraction_model,
+                'messages': [{'role': 'user', 'content': prompt}],
+                'stream': False,
+            },
+            timeout=120,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        content = data.get('message', {}).get('content', '')
+
+        # Try to parse JSON from the response
+        content = content.strip()
+        # Remove markdown code fences if present
+        if content.startswith('```'):
+            content = re.sub(r'^```(?:json)?\s*', '', content)
+            content = re.sub(r'\s*```$', '', content)
+
+        try:
+            result = json.loads(content)
+        except json.JSONDecodeError:
+            # Try to extract JSON block
+            match = re.search(r'\{[\s\S]*\}', content)
+            if match:
+                result = json.loads(match.group(0))
+            else:
+                return False, f'AI 返回的内容无法解析为 JSON: {content[:200]}...'
+
+        return True, result
+
+    except requests.RequestException as e:
+        return False, f'连接 Ollama 失败: {type(e).__name__}: {e}'
+    except Exception as e:
+        return False, f'AI 提取失败: {type(e).__name__}: {e}'

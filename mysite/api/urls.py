@@ -15,6 +15,7 @@ urlpatterns = [
 
     # Agents
     path('agents/', views.AgentListView.as_view(), name='api_agents'),
+    path('agents/<str:slug>/default/', views.AgentSetDefaultView.as_view(), name='api_agent_set_default'),
 
     # Models
     path('models/', views.ModelListView.as_view(), name='api_models'),

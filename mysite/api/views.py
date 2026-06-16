@@ -26,6 +26,7 @@ from promotions.view_helper import (
     _resolve_session_identifier,
     _safe_model_key,
     helper_sse,
+    route_and_retrieve,
 )
 from .serializers import (
     AgentSerializer,
@@ -236,6 +237,19 @@ class ChatStreamView(APIView):
         chat_target = _get_chat_target(model_key)
         session_path = _get_session_context_path_for_user(request.user.id, model_key)
 
+        # ── RAG: augment knowledge for KG agents ──
+        if model_key.startswith('agent:'):
+            try:
+                slug = model_key.split(':', 1)[1]
+                agent = Agent.objects.get(slug=slug, is_active=True)
+                rag_result = route_and_retrieve(agent, promotion)
+                if rag_result and rag_result.get('context'):
+                    augmented = (chat_target.get('knowledge_text') or default_knowledge_text or '')
+                    augmented += '\n\n' + rag_result['context']
+                    chat_target['knowledge_text'] = augmented
+            except Agent.DoesNotExist:
+                pass
+
         def generate():
             yield helper_sse('status', {'message': 'thinking'})
             for sse_event in generate_sse_stream(
@@ -273,14 +287,27 @@ class ChatStopView(APIView):
 # ---------------------------------------------------------------------------
 
 class AgentListView(APIView):
-    """GET /api/v1/agents/ — list all active agents."""
+    """GET /api/v1/agents/ — list all active agents (default first)."""
 
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        agents = Agent.objects.filter(is_active=True).order_by('name')
+        agents = Agent.objects.filter(is_active=True).order_by('-is_default', 'name')
         serializer = AgentSerializer(agents, many=True)
         return Response(serializer.data)
+
+
+class AgentSetDefaultView(APIView):
+    """POST /api/v1/agents/{slug}/default/ — set an agent as default."""
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, slug):
+        agent = get_object_or_404(Agent, slug=slug, is_active=True)
+        Agent.objects.filter(is_default=True).update(is_default=False)
+        agent.is_default = True
+        agent.save()
+        return Response({'ok': True})
 
 
 # ---------------------------------------------------------------------------
