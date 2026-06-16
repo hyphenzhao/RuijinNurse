@@ -149,3 +149,5 @@ yarn-error.log*
 ########################
 mysite/promotions/runtime_sessions/*
 !mysite/promotions/runtime_sessions/.gitkeep
+
+.codegraph/

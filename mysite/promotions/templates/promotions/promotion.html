@@ -15,25 +15,85 @@
     <style>
         html, body {
             height: 100%;
+            margin: 0;
+            overflow: hidden;
         }
 
-        .app-header{background:#0d6efd;color:#fff;padding:10px;border-radius:.5rem;}
-        .app-layout{display:flex;gap:1rem;align-items:stretch;position:relative;}
-        .panel-left,.panel-center,.panel-right{display:flex;flex-direction:column;min-width:0;}
-        .panel-left{flex:0 0 28%;}
-        .panel-center{flex:1 1 auto;position:relative;transition:flex-basis .35s ease,max-width .35s ease;}
-        .panel-right{flex:0 0 24%;transition:flex-basis .35s ease,max-width .35s ease,opacity .35s ease,transform .35s ease;}
-        .sidebar-hidden .panel-right{max-width:0!important;flex-basis:0!important;opacity:0;overflow:hidden;transform:translateX(8px);pointer-events:none;}
-        .video-card{position:sticky;top:1rem;}
-        .unity-iframe { width: 100%; height: 65vh; border: 0; border-radius: .5rem; }
-        .video-card video{width:100%;height:auto;border-radius:.5rem;}
+        /* ═══ Layer 0: Full-screen Unity background ═══ */
+        .unity-bg {
+            position: fixed;
+            top: 0;
+            left: 0;
+            z-index: 0;
+            border: 0;
+            width: 100vw;
+            height: 100vh;
+            max-width: 100vw;
+            max-height: 100vh;
+        }
 
-        .chat-surface{background:#fff;border-radius:.5rem;box-shadow:0 0.125rem 0.25rem rgba(0,0,0,.075);display:flex;flex-direction:column;min-height:60vh;}
-        .chat-messages{padding:1rem;overflow-y:auto;flex:1 1 auto;scroll-behavior:smooth;border-bottom:1px solid rgba(0,0,0,.075);}
+        /* ═══ Layer 1: Right-side overlay container ═══ */
+        .overlay-container {
+            position: fixed;
+            right: 0;
+            top: 0;
+            bottom: 0;
+            width: 70%;
+            z-index: 1;
+            display: flex;
+            flex-direction: column;
+            padding: 16px 24px 16px 0;
+            gap: 10px;
+            pointer-events: none;
+        }
+        .overlay-container > * {
+            pointer-events: auto;
+        }
+
+        /* Header */
+        .app-header {
+            background: transparent;
+            color: #fff;
+            text-shadow: 0 1px 4px rgba(0,0,0,0.6);
+            padding: 4px 12px;
+            margin: 0;
+            font-size: 1.3rem;
+            font-weight: 700;
+            white-space: nowrap;
+        }
+
+        /* ═══ Glass panel ═══ */
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.72);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border-radius: 16px;
+            border: 1px solid rgba(255, 255, 255, 0.35);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+        }
+
+        /* ═══ Chat panel (fills available space) ═══ */
+        .chat-panel {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            min-height: 0;
+        }
+
+        .chat-messages {
+            padding: 1rem;
+            overflow-y: auto;
+            flex: 1 1 auto;
+            scroll-behavior: smooth;
+            border-bottom: 1px solid rgba(0,0,0,.075);
+        }
+
+        /* Message bubbles */
         .message{display:flex;margin-bottom:.5rem;}
         .message.user{justify-content:flex-end;}
         .message.ai{justify-content:flex-start;}
-        .bubble{max-width:78%;padding:.5rem .75rem;border-radius:1rem;box-shadow:0 1px 2px rgba(0,0,0,.05);word-wrap:break-word;white-space:pre-wrap;line-height:1.45;font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", sans-serif;}
+        .bubble{max-width:78%;padding:.5rem .75rem;border-radius:1rem;box-shadow:0 1px 2px rgba(0,0,0,.05);word-wrap:break-word;white-space:pre-wrap;line-height:1.45;font-family: system-ui, -apple-system, “Segoe UI”, Roboto, “Helvetica Neue”, Arial, “Noto Sans”, “Apple Color Emoji”, “Segoe UI Emoji”, “Segoe UI Symbol”, sans-serif;}
         .message.user .bubble{background:#dceeff;border-top-right-radius:.25rem;}
         .message.ai .bubble{background:#f8f9fa;border-top-left-radius:.25rem;}
         .bubble .thinking{color:#6c757d;margin-bottom:.25rem;font-size:.85rem;display:flex;align-items:center;gap:.25rem;opacity:0.85;}
@@ -75,19 +135,6 @@
         .chat-input-actions{display:flex;gap:.5rem;align-items:center;}
         .stop-square-btn{position:absolute;right:.5rem;bottom:.5rem;width:2.25rem;height:2.25rem;padding:0;display:inline-flex;align-items:center;justify-content:center;border-radius:.5rem;line-height:1;font-size:.95rem;z-index:2;}
 
-        .sidebar{background:#fff;border-radius:.5rem;box-shadow:0 0.125rem 0.25rem rgba(0,0,0,.075);overflow:hidden;}
-        .sidebar-header{padding:.75rem 1rem;border-bottom:1px solid rgba(0,0,0,.075);display:flex;align-items:center;justify-content:space-between;}
-        .sidebar-body{padding:1rem;}
-
-        .sidebar-toggle-tab{
-            position:absolute;top:50%;right:-0.75rem;transform:translateY(-50%);
-            z-index:20;border:1px solid rgba(0,0,0,.1);background:#fff;border-radius:1rem;
-            width:36px;height:72px;display:flex;align-items:center;justify-content:center;
-            box-shadow:0 6px 16px rgba(0,0,0,.12);cursor:pointer;user-select:none;
-        }
-        .sidebar-toggle-tab .icon{font-size:1.25rem;line-height:1;}
-        .sidebar-toggle-tab:hover{box-shadow:0 8px 20px rgba(0,0,0,.16);}
-
         /* Video bubble styles */
         .video-bubble .video-wrapper { position: relative; }
         .video-bubble video { width: 100%; height: auto; border-radius: .5rem; display: block; }
@@ -102,13 +149,6 @@
         }
         .video-bubble .reply-btn:hover { background: #fff; }
 
-        /* Optional: full-screen overlay fallback if fullscreen API is blocked (mobile) */
-        .intro-overlay {
-          position: fixed; inset: 0; background: #000; display: none; align-items: center; justify-content: center;
-          z-index: 9999;
-        }
-        .intro-overlay.active { display: flex; }
-        .intro-overlay video { width: 100%; height: 100%; object-fit: contain; }
         .intro-gate {
           position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
           background: rgba(0,0,0,.6); z-index: 9999;
@@ -119,176 +159,6 @@
         }
         .gate-title { font-weight: 600; margin-bottom: .75rem; }
 
-        .debug-panel{margin-top:1rem;background:#fff;border-radius:.5rem;box-shadow:0 0.125rem 0.25rem rgba(0,0,0,.075);padding:.85rem 1rem;}
-        .debug-panel summary{cursor:pointer;font-weight:600;color:#495057;}
-        .debug-grid{display:grid;grid-template-columns:180px 1fr;gap:.5rem .75rem;margin-top:.75rem;font-size:.95rem;}
-        .debug-grid .label{color:#6c757d;font-weight:600;}
-        .debug-grid .value{word-break:break-all;color:#212529;}
-
-        .sidebar-actions{display:flex;gap:.5rem;}
-        .sidebar-actions .btn{flex:1 1 0;}
-        .help-modal-body{max-height:70vh;overflow:auto;}
-        .help-modal-body .markdown-body{line-height:1.6;word-break:break-word;}
-        .help-modal-body .markdown-body h1,
-        .help-modal-body .markdown-body h2,
-        .help-modal-body .markdown-body h3,
-        .help-modal-body .markdown-body h4{margin-top:1rem;margin-bottom:.6rem;}
-        .help-modal-body .markdown-body pre{background:#111827;color:#f9fafb;padding:.75rem;border-radius:.5rem;overflow:auto;}
-        .help-modal-body .markdown-body code{background:transparent;padding:0;border-radius:0;font-size:.9em;}
-        .help-modal-body .markdown-body pre code{background:transparent;padding:0;border-radius:0;color:inherit;}
-
-        @media (max-width: 991.98px){
-            .app-layout{flex-direction:column;}
-            .panel-left,.panel-center,.panel-right{flex-basis:auto!important;max-width:100%!important;}
-            .video-card{position:static;}
-            .sidebar-toggle-tab{position:fixed;right:1rem;bottom:1rem;top:auto;transform:none;height:44px;width:44px;border-radius:50%;}
-        }
-
-        /* MOBILE UNITY-BG START: phone-style layout */
-        @media (max-width: 767.98px){
-            html, body {
-                height: 100%;
-                overflow: hidden;
-            }
-
-            .root-container {
-                height: 100%;
-                max-width: 100%;
-                margin: 0;
-                padding: 0;
-            }
-            /* 让输入区在手机上变成上下布局，textarea 占大空间 */
-            .chat-input {
-                flex-direction: column;      /* 从横排改为竖排 */
-                align-items: stretch;        /* 宽度拉满 */
-                gap: .4rem;
-            }
-
-            .chat-input textarea {
-                min-height: 80px;           /* 明确给一个多行高度 */
-                max-height: 140px;          /* 防止太高挡住聊天记录 */
-            }
-
-            .chat-input-actions button {
-                width: 100%;                /* 提交按钮占满一行，方便点 */
-            }
-
-            .stop-square-btn {
-                width: 2.25rem;
-                min-width: 2.25rem;
-                height: 2.25rem;
-            }
-            
-            /* Unity fills whole screen as background */
-            .panel-left {
-                position: fixed;
-                inset: 0;
-                z-index: 0;
-            }
-            .video-card {
-                height: 100%;
-                background: transparent;
-                border: none;
-                box-shadow: none;
-            }
-            .video-card .card-body {
-                height: 100%;
-                padding: 0;
-            }
-            .video-card .card-body > .mb-2,
-            .video-card .card-body > .mt-2 {
-                display: none; /* hide title & “新窗口打开” on mobile */
-            }
-            .unity-embed {
-                height: 100%;
-            }
-            .unity-iframe {
-                height: 100%;
-                border-radius: 0;
-            }
-
-            /* Overlay the rest at bottom with transparent panel */
-            .app-header {
-                position: fixed;
-                top: .75rem;
-                left: .75rem;
-                right: .75rem;
-                z-index: 3;
-                border-radius: .75rem;
-                background: rgba(13,110,253,0.05);
-            }
-
-            .app-layout {
-                position: fixed;
-                left: 0;
-                right: 0;
-                bottom: 0;
-                top: auto;
-                z-index: 2;
-                padding: 0 .75rem .75rem;
-                gap: .5rem;
-                flex-direction: column;
-                align-items: stretch;
-                pointer-events: none; /* only children receive clicks */
-            }
-
-            /* translucent bottom panel background */
-            .app-layout::before {
-                content: '';
-                position: absolute;
-                inset: 0;
-                background: rgba(255,255,255,0.05);
-                backdrop-filter: blur(10px);
-                border-radius: 1rem 1rem 0 0;
-                z-index: -1;
-            }
-
-            .panel-center,
-            .panel-right {
-                pointer-events: auto;
-            }
-
-            .panel-center {
-                max-height: 58vh;
-                overflow: hidden;
-            }
-
-            .chat-surface {
-                background: transparent;
-                box-shadow: none;
-                min-height: 0;
-                max-height: 58vh;
-                display: flex;
-                flex-direction: column;
-            }
-
-            .chat-messages {
-                max-height: 38vh;
-                border-radius: .75rem;
-                background: rgba(255,255,255,0.05);
-                border: none;
-            }
-
-            .chat-input {
-                padding: .5rem 0 0;
-            }
-
-            .sidebar {
-                background: rgba(255,255,255,0.05);
-                border-radius: .75rem;
-            }
-
-            .sidebar-toggle-tab {
-                bottom: 4.5rem;
-                right: .75rem;
-            }
-            .sidebar-collapse-toggle {
-                color: inherit;
-            }
-            .sidebar-collapse-toggle:hover {
-                text-decoration: none;
-            }
-        }
         /* Intro welcome text (below the intro video) */
         .video-bubble .intro-welcome {
           margin-top: .5rem;
@@ -299,7 +169,134 @@
           color: #6c757d;
         }
 
-        /* MOBILE UNITY-BG END */
+        /* ═══ Controls panel (below chat) ═══ */
+        .controls-panel {
+            padding: 14px 16px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            align-items: flex-end;
+        }
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+        .control-group select {
+            min-width: 180px;
+            width: auto;
+        }
+        .control-radio-label {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            font-size: .85rem;
+            font-weight: 600;
+            color: #495057;
+            cursor: pointer;
+            margin: 0;
+        }
+        .control-radio-label input[type=”radio”] {
+            margin: 0;
+        }
+        .control-check {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            white-space: nowrap;
+        }
+        .control-actions {
+            display: flex;
+            gap: 6px;
+            margin-left: auto;
+            align-items: center;
+        }
+
+        /* Debug panel (hidden behind overlay by default) */
+        .debug-panel {
+            position: fixed;
+            bottom: 8px;
+            left: 8px;
+            z-index: 2;
+            background: rgba(255,255,255,0.85);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            border-radius: .5rem;
+            box-shadow: 0 0.125rem 0.25rem rgba(0,0,0,.075);
+            padding: .5rem .75rem;
+            max-width: 28%;
+            font-size: .8rem;
+        }
+        .debug-panel details { font-size: .8rem; }
+        .debug-panel summary{cursor:pointer;font-weight:600;color:#495057;}
+        .debug-grid{display:grid;grid-template-columns:120px 1fr;gap:.25rem .5rem;margin-top:.5rem;font-size:.8rem;}
+        .debug-grid .label{color:#6c757d;font-weight:600;}
+        .debug-grid .value{word-break:break-all;color:#212529;}
+
+        .help-modal-body{max-height:70vh;overflow:auto;}
+        .help-modal-body .markdown-body{line-height:1.6;word-break:break-word;}
+        .help-modal-body .markdown-body h1,
+        .help-modal-body .markdown-body h2,
+        .help-modal-body .markdown-body h3,
+        .help-modal-body .markdown-body h4{margin-top:1rem;margin-bottom:.6rem;}
+        .help-modal-body .markdown-body pre{background:#111827;color:#f9fafb;padding:.75rem;border-radius:.5rem;overflow:auto;}
+        .help-modal-body .markdown-body code{background:transparent;padding:0;border-radius:0;font-size:.9em;}
+        .help-modal-body .markdown-body pre code{background:transparent;padding:0;border-radius:0;color:inherit;}
+
+        /* ═══ Mobile responsive ═══ */
+        @media (max-width: 767.98px){
+            .overlay-container {
+                width: 100%;
+                right: 0;
+                padding: 8px 12px 12px;
+                gap: 8px;
+            }
+
+            .app-header {
+                font-size: 1.1rem;
+                padding: 4px 8px;
+            }
+
+            .chat-input {
+                flex-direction: column;
+                align-items: stretch;
+                gap: .4rem;
+            }
+
+            .chat-input textarea {
+                min-height: 70px;
+                max-height: 120px;
+            }
+
+            .chat-input-actions button {
+                width: 100%;
+            }
+
+            .controls-panel {
+                flex-direction: column;
+                gap: 10px;
+                padding: 12px;
+            }
+
+            .control-group select {
+                min-width: 0;
+                width: 100%;
+            }
+
+            .control-actions {
+                margin-left: 0;
+                flex-wrap: wrap;
+            }
+
+            .debug-panel {
+                max-width: 100%;
+                bottom: auto;
+                top: 4px;
+                left: 4px;
+                right: 4px;
+                font-size: .7rem;
+            }
+        }
 
         /* iOS Capacitor safe-area support */
         :root {
@@ -308,157 +305,121 @@
             --safe-left: env(safe-area-inset-left, 0px);
             --safe-right: env(safe-area-inset-right, 0px);
         }
-        .app-header { padding-top: calc(10px + var(--safe-top)) !important; }
-        .chat-input { padding-bottom: calc(0.75rem + var(--safe-bottom)) !important; }
+        .overlay-container {
+            padding-top: calc(16px + var(--safe-top));
+            padding-bottom: calc(16px + var(--safe-bottom));
+            padding-right: calc(24px + var(--safe-right));
+        }
     </style>
     <script src="{% static 'promotions/js/capacitor-bridge.js' %}"></script>
 </head>
 <body>
-
-<!-- One-tap gate required by browsers to allow fullscreen autoplay -->
-<!-- <div id="introGate" class="intro-gate" hidden>
-  <div class="gate-card">
-    <div class="gate-title">欢迎观看入院介绍视频</div>
-    <button id="introStart" class="btn btn-primary btn-lg">开始播放</button>
-  </div>
-</div> -->
-
-<div class="container my-4 root-container">
-    <h1 class="text-center my-2 app-header">瑞金医院功能神外宣讲AI</h1>
-    <div id="appLayout"
-     class="app-layout mt-3"
+<div id="appRoot"
      data-show-intro="{{ show_intro|yesno:'1,0' }}"
      data-intro-src="{% static 'promotions/hospital_notification.mp4' %}"
      data-intro-welcome="欢迎来到瑞金医院功能神外智能宣讲。请先观看入院介绍视频，如有问题可在右侧输入提问。">
 
-        <!-- Left: Unity WebGL (replaces the video) -->
-        <div class="panel-left">
-          <div class="video-card card">
-            <div class="card-body">
-              <div class="mb-2 fw-bold">3D 场景</div>
+    <!-- ═══ Layer 0: Full-screen Unity background ═══ -->
+    {% now "U" as ts %}
+    <iframe
+      id="unityFrame"
+      class="unity-bg"
+      src="{% static 'promotions/unity/Build/index.html' %}?v={{ ts }}"
+      title="Unity 3D Scene"
+      loading="lazy"
+      allow="fullscreen; xr-spatial-tracking; gamepad"
+      allowfullscreen
+    ></iframe>
 
-              <!-- Responsive container (keeps aspect ratio if you prefer 16:9) -->
-              <div id="unityContainer" class="unity-embed">
-                {% now "U" as ts %}
-                <iframe
-                  id="unityFrame"
-                  class="unity-iframe"
-                  src="{% static 'promotions/unity/Build/index.html' %}?v={{ ts }}"
-                  title="Unity 3D Scene"
-                  loading="lazy"
-                  allow="fullscreen; xr-spatial-tracking; gamepad"
-                  allowfullscreen
-                ></iframe>
-              </div>
+    <!-- ═══ Layer 1: Right-side overlay ═══ -->
+    <div class="overlay-container">
 
-              <div class="mt-2">
-                <a class="btn btn-sm btn-outline-primary" target="_blank"
-                   href="{% static 'promotions/unity/Build/index.html' %}">
-                  新窗口打开 3D 场景
-                </a>
-              </div>
-            </div>
-          </div>
-        </div>
+        <!-- Header -->
+        <h1 class="app-header">🏥 瑞金医院功能神外宣讲AI</h1>
 
-        <!-- Center: Chat -->
-        <form id="promotion-form" class="panel-center" method="post">
+        <!-- Chat panel (glass card) -->
+        <form id="promotion-form" class="chat-panel glass-panel" method="post">
             {% csrf_token %}
-            <div class="chat-surface">
-                <div id="chat-messages" class="chat-messages">
-                    {% for chat in chat_history %}
-                        <div class="message user"><div class="bubble"><strong>问题：</strong> {{ chat.user }}</div></div>
-                        <div class="message ai">
-                            <div class="bubble">
-                                <div class="answer js-rendered-answer" data-markdown="{{ chat.response|escapejs }}">
-                                    <strong>答复：</strong>
-                                </div>
+            <div id="chat-messages" class="chat-messages">
+                {% for chat in chat_history %}
+                    <div class="message user"><div class="bubble"><strong>问题：</strong> {{ chat.user }}</div></div>
+                    <div class="message ai">
+                        <div class="bubble">
+                            <div class="answer js-rendered-answer" data-markdown="{{ chat.response|escapejs }}">
+                                <strong>答复：</strong>
                             </div>
                         </div>
-                    {% endfor %}
+                    </div>
+                {% endfor %}
+            </div>
+            <div class="chat-input">
+                <div class="chat-input-field">
+                    <textarea id="promotionText" name="promotion_text" class="form-control" placeholder="在此输入您的问题"></textarea>
+                    <button type="button" id="stop-button" class="btn btn-outline-danger stop-square-btn" title="停止朗读/生成" aria-label="停止朗读/生成" disabled>■</button>
                 </div>
-                <div class="chat-input">
-                    <div class="chat-input-field">
-                        <textarea id="promotionText" name="promotion_text" class="form-control" placeholder="在此输入您的问题"></textarea>
-                        <button type="button" id="stop-button" class="btn btn-outline-danger stop-square-btn" title="停止朗读/生成" aria-label="停止朗读/生成" disabled>■</button>
-                    </div>
-                    <div class="chat-input-actions">
-                        <button type="submit" id="submit-button" class="btn btn-primary">提交问题</button>
-                    </div>
+                <div class="chat-input-actions">
+                    <button type="submit" id="submit-button" class="btn btn-primary">提交问题</button>
                 </div>
             </div>
-
             <!-- TTS (optional) -->
             <audio id="tts-audio" src="" autoplay hidden></audio>
 
-            <!-- Hide/Show Sidebar Tab -->
-            <button type="button" id="sidebarToggleTab" class="sidebar-toggle-tab" title="隐藏/显示模型选择">
-                <span class="icon" aria-hidden="true">›</span>
-            </button>
-
-            <!-- Right: Sidebar -->
-            <aside id="sidebar" class="panel-right">
-                <div class="sidebar">
-                    <div class="sidebar-header">
-                        <!-- clickable header to toggle collapse -->
-                        <button
-                            class="btn btn-link p-0 sidebar-collapse-toggle d-flex align-items-center justify-content-between w-100 text-decoration-none"
-                            type="button"
-                            data-bs-toggle="collapse"
-                            data-bs-target="#modelCollapse"
-                            aria-expanded="true"
-                            aria-controls="modelCollapse"
-                        >
-                            <span class="fw-bold">模型选择</span>
-                            <span class="collapse-icon ms-1 small">▾</span>
-                        </button>
-                    </div>
-
-                    <!-- collapsible body -->
-                    <div id="modelCollapse" class="sidebar-body collapse show">
-                        <input type="hidden" id="modelSelect" name="model_select" value="">
-                        <div class="form-group mb-3">
-                            <label for="modeAgent" class="form-label d-flex align-items-center gap-2" style="cursor:pointer;">
-                                <input type="radio" name="selection_mode" id="modeAgent" value="agent" checked>
-                                <span>选择智能体</span>
-                            </label>
-                            <select id="agentSelect" class="form-control">
-                                {% for value, label in agent_options %}
-                                    <option value="{{ value }}">{{ label }}</option>
-                                {% empty %}
-                                    <option value="">暂无可用智能体</option>
-                                {% endfor %}
-                            </select>
-                        </div>
-                        <div class="form-group mb-3">
-                            <label for="modeSingleModel" class="form-label d-flex align-items-center gap-2" style="cursor:pointer;">
-                                <input type="radio" name="selection_mode" id="modeSingleModel" value="model">
-                                <span>选择单模型</span>
-                            </label>
-                            <select id="singleModelSelect" class="form-control">
-                                {% for value, label in model_options %}
-                                    <option value="{{ value }}">{{ label }}</option>
-                                {% empty %}
-                                    <option value="">暂无可用单模型</option>
-                                {% endfor %}
-                            </select>
-                        </div>
-                        <div class="form-check mb-2">
-                            <input class="form-check-input" type="checkbox" value="1" id="showThinkingToggle" checked>
-                            <label class="form-check-label small" for="showThinkingToggle">显示思考过程（渐进输出）</label>
-                        </div>
-                        <div class="text-muted small mb-2">（预留扩展区域）</div>
-                        <div class="sidebar-actions">
-                            <a href="{% url 'setup' %}" class="btn btn-outline-secondary btn-sm">系统管理</a>
-                            <button type="button" id="helpButton" class="btn btn-outline-secondary btn-sm">帮助</button>
-                        </div>
-                    </div>
-                </div>
-            </aside>
-
+            <!-- Hidden model selection value (must be inside form) -->
+            <input type="hidden" id="modelSelect" name="model_select" value="">
         </form>
+
+        <!-- Controls panel (glass card, below chat) -->
+        <div class="controls-panel glass-panel">
+
+            <!-- Agent selection -->
+            <div class="control-group">
+                <label for="modeAgent" class="control-radio-label">
+                    <input type="radio" name="selection_mode" id="modeAgent" value="agent" checked>
+                    <span>🤖 选择智能体</span>
+                </label>
+                <select id="agentSelect" class="form-select form-select-sm">
+                    {% for value, label in agent_options %}
+                        <option value="{{ value }}">{{ label }}</option>
+                    {% empty %}
+                        <option value="">暂无可用智能体</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <!-- Standalone model selection -->
+            <div class="control-group">
+                <label for="modeSingleModel" class="control-radio-label">
+                    <input type="radio" name="selection_mode" id="modeSingleModel" value="model">
+                    <span>📦 选择单模型</span>
+                </label>
+                <select id="singleModelSelect" class="form-select form-select-sm">
+                    {% for value, label in model_options %}
+                        <option value="{{ value }}">{{ label }}</option>
+                    {% empty %}
+                        <option value="">暂无可用单模型</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <!-- Thinking toggle -->
+            <div class="control-group control-check">
+                <input class="form-check-input" type="checkbox" value="1" id="showThinkingToggle" checked>
+                <label class="form-check-label small" for="showThinkingToggle">显示思考过程</label>
+            </div>
+
+            <!-- Action buttons -->
+            <div class="control-actions">
+                <a href="{% url 'setup' %}" class="btn btn-outline-secondary btn-sm">⚙️ 系统管理</a>
+                <button type="button" id="helpButton" class="btn btn-outline-secondary btn-sm">❓ 帮助</button>
+                <a class="btn btn-outline-secondary btn-sm" target="_blank"
+                   href="{% static 'promotions/unity/Build/index.html' %}">
+                   🔲 新窗口打开 3D 场景
+                </a>
+            </div>
+        </div>
     </div>
 
+    <!-- Debug panel (normal flow, behind overlay) -->
     <div class="debug-panel">
         <details>
             <summary>调试面板</summary>
@@ -682,18 +643,6 @@
   }
 </script>
 <script>
-    // Sidebar hide/show
-    (function(){
-        const layout = document.getElementById('appLayout');
-        const tab = document.getElementById('sidebarToggleTab');
-        function syncIcon(){
-            const hidden = layout.classList.contains('sidebar-hidden');
-            tab.querySelector('.icon').textContent = hidden ? '‹' : '›';
-        }
-        tab.addEventListener('click', ()=>{ layout.classList.toggle('sidebar-hidden'); syncIcon(); });
-        syncIcon();
-    })();
-
     // CSRF helper
     function getCookie(name) {
         const v = (`; ${document.cookie}`).split(`; ${name}=`);
@@ -1131,23 +1080,8 @@
     return { msg, video, btn };
   }
 
-  // async function enterFullscreenIfPossible(el) {
-  //   if (el.requestFullscreen) { await el.requestFullscreen(); return true; }
-  //   if (el.webkitEnterFullscreen) { el.webkitEnterFullscreen(); return true; } // iOS Safari
-  //   return false;
-  // }
-
-  // async function playIntroFullscreen(videoEl) {
-  //   // Must be inside a user gesture to succeed in all browsers
-  //   videoEl.muted = true;         // autoplay requirement
-  //   await videoEl.play();         // start playback
-  //   try { await enterFullscreenIfPossible(videoEl); } catch(e) { /* ignore */ }
-  //   // Optionally unmute after entering FS (may still require user gesture on some devices)
-  //   setTimeout(() => { try { videoEl.muted = false; } catch{} }, 300);
-  // }
-
   (function setupIntroVideo() {
-    const layout = document.getElementById('appLayout');
+    const layout = document.getElementById('appRoot');
     if (!layout) return;
 
     const showIntro = layout.getAttribute('data-show-intro') === '1';
@@ -1155,75 +1089,26 @@
     if (!showIntro || !videoSrc) return;
 
     const messages = document.getElementById('chat-messages');
-    const gate = document.getElementById('introGate');
-    const startBtn = document.getElementById('introStart');
 
-    // Build bubble first so the same element remains after FS
+    // Insert intro video bubble into chat (plays inline with controls)
     const intro = makeAIVideoBubble(videoSrc);
     if (messages.firstChild) messages.insertBefore(intro.msg, messages.firstChild);
     else messages.appendChild(intro.msg);
-    // NEW: append a short welcome/introduction area under the video
+
+    // Append welcome text below video
     const welcomeText = layout.getAttribute('data-intro-welcome') || '';
     if (welcomeText) {
       const welcome = document.createElement('div');
       welcome.className = 'intro-welcome';
-      // Use safe text rendering; supports \n if you include it
       welcome.innerHTML = textToSafeHtml(welcomeText);
       intro.msg.querySelector('.bubble')?.appendChild(welcome);
     }
-    // Show one-tap gate (required for fullscreen policy)
-    gate.hidden = false;
-
-    // On tap: play + fullscreen
-    startBtn.addEventListener('click', async () => {
-      gate.hidden = true;
-      try { await playIntroFullscreen(intro.video); }
-      catch (e) { /* if anything fails, the video still plays inline */ }
-
-      // When user exits FS, keep bubble inline (already in DOM)
-      document.addEventListener('fullscreenchange', () => {
-        if (!document.fullscreenElement) {
-          try { intro.video.controls = true; } catch {}
-        }
-      }, { once: true });
-    }, { once: true });
   })();
 </script>
 <script>
     document.addEventListener('DOMContentLoaded', function () {
         document.querySelectorAll('.js-rendered-answer').forEach(function (el) {
             renderAnswerContent(el, el.dataset.markdown || '');
-        });
-
-        var collapseEl = document.getElementById('modelCollapse');
-        if (!collapseEl || typeof bootstrap === 'undefined') return;
-
-        // Create Collapse instance but don't toggle automatically
-        var modelCollapse = new bootstrap.Collapse(collapseEl, { toggle: false });
-
-        // Default state: collapsed on mobile (<768px), expanded on larger screens
-        function setInitialCollapseState() {
-            if (window.matchMedia('(max-width: 767.98px)').matches) {
-                modelCollapse.hide();
-            } else {
-                modelCollapse.show();
-            }
-        }
-        setInitialCollapseState();
-
-        // Update arrow icon
-        var toggleBtn = document.querySelector('.sidebar-collapse-toggle');
-        var icon = toggleBtn ? toggleBtn.querySelector('.collapse-icon') : null;
-
-        collapseEl.addEventListener('shown.bs.collapse', function () {
-            if (icon) icon.textContent = '▾';
-        });
-        collapseEl.addEventListener('hidden.bs.collapse', function () {
-            if (icon) icon.textContent = '▸';
-        });
-
-        window.addEventListener('resize', function () {
-            setInitialCollapseState();
         });
     });
 </script>

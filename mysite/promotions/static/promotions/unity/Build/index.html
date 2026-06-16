@@ -101,10 +101,16 @@
 
 
       } else {
-        // Desktop style: Render the game canvas in a window that can be maximized to fullscreen:
-
-        canvas.style.width = "960px";
-        canvas.style.height = "600px";
+        // Desktop style: fill the entire iframe without exceeding it
+        // ZOOM_FACTOR: increase to zoom into the 3D scene (1.0 = normal, 1.5 = 50% zoom in)
+        var ZOOM_FACTOR = 1.0;
+        canvas.style.width = "100%";
+        canvas.style.height = "100%";
+        canvas.style.maxWidth = "100%";
+        canvas.style.maxHeight = "100%";
+        document.body.style.overflow = "hidden";
+        container.style.transform = "scale(" + ZOOM_FACTOR + ")";
+        container.style.transformOrigin = "center center";
       }
 
       loadingBar.style.display = "block";
