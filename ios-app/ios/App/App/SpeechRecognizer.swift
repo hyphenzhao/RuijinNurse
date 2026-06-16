@@ -101,6 +101,8 @@ class SpeechRecognizer: ObservableObject {
         lastError = nil
         recognitionTask = speechRecognizer.recognitionTask(with: recognitionRequest) { [weak self] result, error in
             guard let self = self else { return }
+            // Guard: if already stopped (e.g. user tapped mic), ignore late callbacks
+            guard self.isRecording else { return }
             if let error = error {
                 print("[SpeechRecognizer] Recognition error: \(error.localizedDescription)")
                 self.lastError = error.localizedDescription
@@ -125,14 +127,24 @@ class SpeechRecognizer: ObservableObject {
 
     /// Stop recording — recognized text is available in recognizedText
     func stopRecording() {
+        // Guard against re-entrant calls (e.g. recognition callback
+        // firing after user already tapped mic to stop).  Without this,
+        // the late callback would deactivate the audio session while
+        // TTS is speaking, breaking read-aloud.
+        guard isRecording else { return }
+
+        // Set immediately so the async recognition callback bails out
+        isRecording = false
+
         recognitionTask?.cancel()
         recognitionTask = nil
         recognitionRequest?.endAudio()
         recognitionRequest = nil
-        audioEngine.inputNode.removeTap(onBus: 0)
-        audioEngine.stop()
 
-        isRecording = false
+        if audioEngine.isRunning {
+            audioEngine.inputNode.removeTap(onBus: 0)
+            audioEngine.stop()
+        }
 
         // Release audio session so TTS can take over
         do {

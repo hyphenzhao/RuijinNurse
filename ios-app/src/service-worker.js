@@ -1,5 +1,6 @@
 // RuijinNurse Service Worker — offline asset caching
-const CACHE_NAME = 'ruijin-nurse-v1';
+// Bump version when content changes to invalidate old caches on all devices
+const CACHE_NAME = 'ruijin-nurse-v2';
 
 // Static assets to cache on install (served by Django at /static/...)
 const STATIC_ASSETS = [
@@ -22,14 +23,12 @@ self.addEventListener('install', (event) => {
 });
 
 self.addEventListener('activate', (event) => {
+  // Delete ALL old caches so stale content is never served again
   event.waitUntil(
     caches.keys().then((keys) => {
-      return Promise.all(
-        keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key))
-      );
-    })
+      return Promise.all(keys.map((key) => caches.delete(key)));
+    }).then(() => self.clients.claim())
   );
-  self.clients.claim();
 });
 
 self.addEventListener('fetch', (event) => {
@@ -39,23 +38,25 @@ self.addEventListener('fetch', (event) => {
   // Skip chrome-extension:// and other non-http(s) requests
   if (!event.request.url.startsWith('http')) return;
 
-  // Network-first strategy for API calls (SSE streaming can't be cached)
-  // Cache-first for static assets
+  // Stale-while-revalidate: return cached version immediately (fast),
+  // then silently update the cache from network in the background.
+  // This prevents stale content from being locked in forever.
   const url = new URL(event.request.url);
   if (url.pathname.startsWith('/static/')) {
-    // Cache-first for static assets
     event.respondWith(
-      caches.match(event.request).then((cached) => {
-        return (
-          cached ||
-          fetch(event.request).then((response) => {
-            const clone = response.clone();
-            caches.open(CACHE_NAME).then((cache) => {
-              cache.put(event.request, clone);
-            });
+      caches.open(CACHE_NAME).then((cache) => {
+        return cache.match(event.request).then((cached) => {
+          const fetchPromise = fetch(event.request).then((response) => {
+            if (response.ok) {
+              cache.put(event.request, response.clone());
+            }
             return response;
-          })
-        );
+          }).catch((err) => {
+            console.warn('[SW] Fetch failed, using cache:', err);
+          });
+          // Return cached immediately, or wait for network if no cache
+          return cached || fetchPromise;
+        });
       })
     );
   } else {

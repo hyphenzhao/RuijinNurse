@@ -125,12 +125,19 @@ class TTSManager: NSObject, ObservableObject {
             return
         }
 
-        // Ensure playback audio session (release any .record session from STT)
+        // Ensure playback audio session (release any lingering .record session from STT).
+        // Deactivate first to cleanly transition away from .record, then activate .playback.
+        let session = AVAudioSession.sharedInstance()
         do {
-            try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default)
-            try AVAudioSession.sharedInstance().setActive(true)
+            try session.setActive(false, options: .notifyOthersOnDeactivation)
         } catch {
-            print("[TTSManager] Audio session error: \(error)")
+            print("[TTSManager] Audio session deactivate warning: \(error)")
+        }
+        do {
+            try session.setCategory(.playback, mode: .default)
+            try session.setActive(true)
+        } catch {
+            print("[TTSManager] Audio session activate error: \(error)")
         }
 
         let sentence = utteranceQueue.removeFirst()

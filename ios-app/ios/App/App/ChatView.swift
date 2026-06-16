@@ -58,11 +58,236 @@ struct ChatMessagesView: View {
     }
 }
 
+// MARK: - Video Player Helper (with error observation)
+
+/// Holds an AVPlayer and observes its status, exposing errors and loading state.
+/// Use as @StateObject in views that embed VideoPlayer.
+///
+/// Downloads remote videos to a local temp file first, then plays from disk.
+/// This works around servers that don't correctly handle HTTP Range requests
+/// (e.g. Django runserver), which would otherwise break AVPlayer streaming.
+@MainActor
+class VideoPlayerModel: ObservableObject {
+    @Published var player: AVPlayer?
+    @Published var errorMessage: String?
+    @Published var isLoading = true
+    @Published var isReady = false
+    @Published var downloadProgress: Double = 0
+
+    private var statusObs: NSKeyValueObservation?
+    private var errorObs: NSKeyValueObservation?
+    private var downloadTask: URLSessionDownloadTask?
+    private let logPrefix: String
+    private var loadingURL: URL?  // Track which URL is currently loading to prevent re-entrant calls
+
+    init(logPrefix: String = "[VideoPlayer]") {
+        self.logPrefix = logPrefix
+    }
+
+    /// Load a remote video.  Downloads to a local temp file first so that
+    /// we don't depend on the server correctly handling HTTP Range requests.
+    func load(url: URL) {
+        // If already loaded this URL and ready, do nothing
+        if let player = player, isReady, loadingURL == url {
+            print("\(logPrefix) ⏭️ Already playing this URL, skip")
+            return
+        }
+
+        // If currently downloading the same URL, do nothing
+        if isLoading && loadingURL == url {
+            print("\(logPrefix) ⏭️ Already downloading this URL, skip")
+            return
+        }
+
+        // If already cached locally, play directly
+        let cacheURL = Self.cacheURL(for: url)
+        if FileManager.default.fileExists(atPath: cacheURL.path) {
+            print("\(logPrefix) 📦 Using cached file: \(cacheURL.path)")
+            loadingURL = url
+            playLocalFile(cacheURL)
+            return
+        }
+
+        // Cancel any previous download
+        downloadTask?.cancel()
+        downloadTask = nil
+
+        print("\(logPrefix) 🌐 Downloading: \(url.absoluteString)")
+        isLoading = true
+        errorMessage = nil
+        isReady = false
+        downloadProgress = 0
+        loadingURL = url
+
+        let task = URLSession.shared.downloadTask(with: URLRequest(url: url, timeoutInterval: 300)) { [weak self] tempURL, response, error in
+            guard let self = self else { return }
+
+            if let error = error {
+                DispatchQueue.main.async {
+                    // Only report if still loading this URL (not superseded)
+                    guard self.loadingURL == url else { return }
+                    print("\(self.logPrefix) ❌ Download error: \(error.localizedDescription)")
+                    self.errorMessage = error.localizedDescription
+                    self.isLoading = false
+                }
+                return
+            }
+
+            guard let tempURL = tempURL else {
+                DispatchQueue.main.async {
+                    guard self.loadingURL == url else { return }
+                    print("\(self.logPrefix) ❌ Download returned no data")
+                    self.errorMessage = "下载失败：无数据"
+                    self.isLoading = false
+                }
+                return
+            }
+
+            // Check HTTP status
+            if let httpResp = response as? HTTPURLResponse {
+                print("\(self.logPrefix) 📡 HTTP \(httpResp.statusCode), Content-Type: \(httpResp.allHeaderFields["Content-Type"] ?? "unknown"), Size: \(httpResp.expectedContentLength)")
+                guard httpResp.statusCode == 200 else {
+                    DispatchQueue.main.async {
+                        guard self.loadingURL == url else { return }
+                        print("\(self.logPrefix) ❌ HTTP error \(httpResp.statusCode)")
+                        self.errorMessage = "HTTP \(httpResp.statusCode)"
+                        self.isLoading = false
+                    }
+                    return
+                }
+            }
+
+            // Move to cache
+            do {
+                try? FileManager.default.removeItem(at: cacheURL)
+                try FileManager.default.createDirectory(at: cacheURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try FileManager.default.copyItem(at: tempURL, to: cacheURL)
+                print("\(self.logPrefix) 📁 Cached to: \(cacheURL.path)")
+            } catch {
+                DispatchQueue.main.async {
+                    guard self.loadingURL == url else { return }
+                    print("\(self.logPrefix) ❌ Cache error: \(error)")
+                    self.errorMessage = "缓存文件失败"
+                    self.isLoading = false
+                }
+                return
+            }
+
+            DispatchQueue.main.async {
+                guard self.loadingURL == url else { return }
+                self.playLocalFile(cacheURL)
+            }
+        }
+
+        // Track download progress
+        let observation = task.progress.observe(\.fractionCompleted) { [weak self] progress, _ in
+            DispatchQueue.main.async {
+                self?.downloadProgress = progress.fractionCompleted
+            }
+        }
+        // Keep observation alive
+        objc_setAssociatedObject(task, "progressObs", observation, .OBJC_ASSOCIATION_RETAIN)
+
+        downloadTask = task
+        task.resume()
+    }
+
+    /// Play a local file (no Range-request dependency)
+    private func playLocalFile(_ url: URL) {
+        print("\(logPrefix) ▶️ Playing local: \(url.path)")
+
+        let asset = AVURLAsset(url: url)
+        let playerItem = AVPlayerItem(asset: asset)
+        let p = AVPlayer(playerItem: playerItem)
+        player = p
+        isLoading = true
+
+        // Observe status
+        statusObs = playerItem.observe(\.status, options: [.new, .initial]) { [weak self] item, _ in
+            DispatchQueue.main.async {
+                self?.handleStatus(item.status, item: item)
+            }
+        }
+
+        // Observe error
+        errorObs = playerItem.observe(\.error, options: [.new]) { [weak self] item, _ in
+            DispatchQueue.main.async {
+                if let err = item.error {
+                    print("\(self?.logPrefix ?? "") ❌ PlayerItem error: \(err.localizedDescription)")
+                    self?.errorMessage = err.localizedDescription
+                    self?.isLoading = false
+                }
+            }
+        }
+
+        p.play()
+    }
+
+    private func handleStatus(_ status: AVPlayerItem.Status, item: AVPlayerItem) {
+        switch status {
+        case .readyToPlay:
+            print("\(logPrefix) ✅ Ready to play")
+            isLoading = false
+            isReady = true
+        case .failed:
+            let err = item.error
+            print("\(logPrefix) ❌ Failed: \(err?.localizedDescription ?? "unknown")")
+            if let nsErr = err as NSError? {
+                print("\(logPrefix)    Domain: \(nsErr.domain), Code: \(nsErr.code)")
+            }
+            errorMessage = err?.localizedDescription ?? "播放失败"
+            isLoading = false
+            isReady = false
+        case .unknown:
+            print("\(logPrefix) ⏳ Status: unknown — loading...")
+        @unknown default:
+            print("\(logPrefix) ⚠️ Unknown status")
+        }
+    }
+
+    func stop() {
+        player?.pause()
+        player = nil
+        downloadTask?.cancel()
+        downloadTask = nil
+        loadingURL = nil
+        statusObs?.invalidate()
+        errorObs?.invalidate()
+    }
+
+    /// Pause player only — keep download running (for scroll-away in lists)
+    func pauseOnly() {
+        player?.pause()
+        statusObs?.invalidate()
+        errorObs?.invalidate()
+    }
+
+    /// Cache directory for downloaded videos
+    private static func cacheURL(for remoteURL: URL) -> URL {
+        let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first!
+        let dir = caches.appendingPathComponent("VideoCache", isDirectory: true)
+        let filename = remoteURL.lastPathComponent
+        return dir.appendingPathComponent(filename)
+    }
+
+    /// Clear all cached videos
+    static func clearCache() {
+        let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first!
+        let dir = caches.appendingPathComponent("VideoCache", isDirectory: true)
+        try? FileManager.default.removeItem(at: dir)
+    }
+
+    deinit {
+        statusObs?.invalidate()
+        errorObs?.invalidate()
+    }
+}
+
 // MARK: - Intro Video
 
 struct IntroVideoView: View {
     let videoURL: URL
-    @State private var player = AVPlayer()
+    @StateObject private var model = VideoPlayerModel(logPrefix: "[IntroVideo]")
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -73,9 +298,70 @@ struct IntroVideoView: View {
                     .fontWeight(.medium)
             }
 
-            VideoPlayer(player: player)
+            // Video area
+            if let error = model.errorMessage {
+                // Error state
+                VStack(spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.largeTitle)
+                        .foregroundColor(.orange)
+                    Text("视频加载失败")
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                    Text(error)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 8)
+                    Button("🔄 重试") {
+                        model.load(url: videoURL)
+                    }
+                    .font(.caption)
+                    .foregroundColor(.blue)
+                }
                 .frame(height: 220)
+                .frame(maxWidth: .infinity)
+                .background(Color(.systemGray6))
                 .cornerRadius(12)
+            } else if model.isLoading, model.player == nil {
+                // Downloading / loading — show progress
+                Rectangle()
+                    .fill(Color(.systemGray6))
+                    .frame(height: 220)
+                    .cornerRadius(12)
+                    .overlay(
+                        VStack(spacing: 12) {
+                            ProgressView(value: model.downloadProgress > 0 ? model.downloadProgress : nil)
+                                .tint(.blue)
+                                .frame(width: 120)
+                            if model.downloadProgress > 0 {
+                                Text("下载中 \(Int(model.downloadProgress * 100))%")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            } else {
+                                Text("正在连接服务器...")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                    )
+            } else if let player = model.player {
+                VideoPlayer(player: player)
+                    .frame(height: 220)
+                    .cornerRadius(12)
+                    .overlay(
+                        // Loading overlay (semi-transparent) while buffering
+                        Group {
+                            if model.isLoading {
+                                ZStack {
+                                    Color.black.opacity(0.3)
+                                    ProgressView().tint(.white)
+                                }
+                                .cornerRadius(12)
+                            }
+                        }
+                    )
+            }
 
             Text("欢迎来到瑞金医院功能神外智能宣讲。请先观看入院介绍视频，如有问题可在下方输入提问。")
                 .font(.caption)
@@ -85,11 +371,10 @@ struct IntroVideoView: View {
         .background(Color(.systemBackground))
         .cornerRadius(12)
         .onAppear {
-            player = AVPlayer(url: videoURL)
-            player.play()
+            model.load(url: videoURL)
         }
         .onDisappear {
-            player.pause()
+            model.stop()
         }
     }
 }
@@ -359,6 +644,38 @@ struct StreamingBubbleView: View {
 
 struct MediaCardView: View {
     let item: MediaItem
+    @EnvironmentObject var vm: ChatViewModel
+    @StateObject private var videoModel = VideoPlayerModel(logPrefix: "[MediaCard]")
+
+    /// Resolve a media URL string against the configured server URL.
+    ///
+    /// - Relative paths like `static/promotions/video.mp4` are resolved against `serverURL`.
+    /// - Absolute URLs whose path starts with `/static/` are REWRITTEN to use `serverURL`
+    ///   as the host.  This fixes hardcoded external URLs (e.g. `http://home.hfnjc.net:8890/...`)
+    ///   that point to the same static files but are unreachable from the iPad.
+    /// - Other absolute URLs are left unchanged.
+    private func resolveMediaURL(_ urlString: String) -> URL? {
+        guard let serverBase = URL(string: vm.serverURL) else { return URL(string: urlString) }
+
+        // Try absolute URL first
+        if let url = URL(string: urlString), url.scheme != nil {
+            // Rewrite /static/promotions/… paths to use our server, regardless of host
+            if url.path.hasPrefix("/static/") {
+                var components = URLComponents(url: serverBase, resolvingAgainstBaseURL: false)
+                components?.path = url.path
+                if let query = url.query { components?.query = query }
+                if let rewritten = components?.url {
+                    print("[MediaCard] 🔄 Rewrote: \(url.host ?? "?") → \(serverBase.host ?? "?")")
+                    return rewritten
+                }
+            }
+            return url
+        }
+
+        // Relative URL — resolve against server base
+        let trimmed = urlString.hasPrefix("/") ? String(urlString.dropFirst()) : urlString
+        return serverBase.appendingPathComponent(trimmed)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -372,11 +689,59 @@ struct MediaCardView: View {
                     .fontWeight(.medium)
             }
 
-            if item.type == .video, let url = URL(string: item.url) {
-                VideoPlayer(player: AVPlayer(url: url))
+            if item.type == .video, let url = resolveMediaURL(item.url) {
+                // Error state
+                if let error = videoModel.errorMessage {
+                    VStack(spacing: 6) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .font(.title2)
+                            .foregroundColor(.orange)
+                        Text("加载失败")
+                            .font(.caption)
+                            .fontWeight(.medium)
+                        Text(error)
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 4)
+                        Button("🔄 重试") {
+                            videoModel.load(url: url)
+                        }
+                        .font(.caption2)
+                        .foregroundColor(.blue)
+                    }
                     .frame(height: 180)
+                    .frame(maxWidth: .infinity)
+                    .background(Color(.systemGray6))
                     .cornerRadius(8)
-            } else if item.type == .image, let url = URL(string: item.url) {
+                } else if videoModel.player != nil {
+                    VideoPlayer(player: videoModel.player!)
+                        .frame(height: 180)
+                        .cornerRadius(8)
+                } else {
+                    // Downloading — show progress
+                    Rectangle()
+                        .fill(Color(.systemGray6))
+                        .frame(height: 180)
+                        .cornerRadius(8)
+                        .overlay(
+                            VStack(spacing: 8) {
+                                ProgressView(value: videoModel.downloadProgress > 0 ? videoModel.downloadProgress : nil)
+                                    .tint(.blue)
+                                    .frame(width: 100)
+                                if videoModel.downloadProgress > 0 {
+                                    Text("下载中 \(Int(videoModel.downloadProgress * 100))%")
+                                        .font(.caption2)
+                                        .foregroundColor(.secondary)
+                                } else {
+                                    Text("加载中...")
+                                        .font(.caption2)
+                                        .foregroundColor(.secondary)
+                                }
+                            }
+                        )
+                }
+            } else if item.type == .image, let url = resolveMediaURL(item.url) {
                 AsyncImage(url: url) { phase in
                     switch phase {
                     case .success(let image):
@@ -393,7 +758,7 @@ struct MediaCardView: View {
                 }
             } else {
                 Button(action: {
-                    if let url = URL(string: item.url) {
+                    if let url = resolveMediaURL(item.url) {
                         UIApplication.shared.open(url)
                     }
                 }) {
@@ -409,6 +774,15 @@ struct MediaCardView: View {
             RoundedRectangle(cornerRadius: 10)
                 .stroke(Color.blue.opacity(0.15), lineWidth: 1)
         )
+        .onAppear {
+            if item.type == .video, let url = resolveMediaURL(item.url) {
+                videoModel.load(url: url)
+            }
+        }
+        .onDisappear {
+            // Keep download alive — don't cancel when scrolling away in a list
+            videoModel.pauseOnly()
+        }
     }
 }
 
@@ -416,11 +790,12 @@ struct MediaCardView: View {
 
 /// Find embedded media URLs (video, image, PDF) in text content.
 /// Matches bare URLs and URLs inside markdown links: [text](url)
+/// Supports both absolute URLs (http://...) and relative paths (static/promotions/...).
 func findEmbeddedMedia(in text: String) -> [MediaItem] {
     var items: [MediaItem] = []
     var seen = Set<String>()
-    // Match http(s)://... ending with media extensions, optionally inside markdown link syntax
-    let pattern = #"https?://[^\s<>"')\]]+?\.(mp4|png|jpe?g|gif|webp|pdf)(\?\S*)?"#
+    // Match media URLs — absolute (http(s)://) or relative paths containing / with media extensions
+    let pattern = #"(?:https?://|/?[\w\-]+/)[^\s<>"')\]]+?\.(mp4|png|jpe?g|gif|webp|pdf)(\?\S*)?"#
     guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else { return [] }
 
     let nsText = text as NSString
