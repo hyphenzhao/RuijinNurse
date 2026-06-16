@@ -6,6 +6,7 @@ struct ContentView: View {
     @State private var showConfig = false
     @State private var showLogin = false
     @State private var sidebarCollapsed = true
+    @State private var unityLoaded = false   // Hide 3D placeholder once Unity is ready
 
     private let digitalHumanWidth: CGFloat = 350
     private let sidebarWidth: CGFloat = 260
@@ -46,7 +47,7 @@ struct ContentView: View {
     @ViewBuilder
     private var backgroundLayer: some View {
         if vm.connectionState == .connected, let unityURL = vm.unityWebGLURL {
-            UnityWebView(url: unityURL)
+            UnityWebView(url: unityURL, onLoad: { unityLoaded = true })
                 .id("unity-webview")
                 .ignoresSafeArea()
         } else {
@@ -128,18 +129,22 @@ struct ContentView: View {
         }
     }
 
-    // 3D Digital Human placeholder
+    // 3D Digital Human placeholder — hides watermark once Unity has loaded
     private var digitalHumanPlaceholder: some View {
         Rectangle()
-            .fill(Color.black.opacity(0.08))
+            .fill(Color.clear)
             .overlay(
-                VStack(spacing: 8) {
-                    Image(systemName: "person.fill.viewfinder")
-                        .font(.system(size: 36))
-                        .foregroundColor(.white.opacity(0.7))
-                    Text("3D 数智人")
-                        .font(.caption)
-                        .foregroundColor(.white.opacity(0.6))
+                Group {
+                    if !unityLoaded {
+                        VStack(spacing: 8) {
+                            Image(systemName: "person.fill.viewfinder")
+                                .font(.system(size: 36))
+                                .foregroundColor(.white.opacity(0.7))
+                            Text("3D 数智人")
+                                .font(.caption)
+                                .foregroundColor(.white.opacity(0.6))
+                        }
+                    }
                 }
             )
             .frame(width: digitalHumanWidth)
@@ -340,9 +345,10 @@ struct SetupView: View {
 
 struct UnityWebView: UIViewRepresentable {
     let url: URL
+    var onLoad: (() -> Void)?
 
     func makeCoordinator() -> Coordinator {
-        Coordinator()
+        Coordinator(onLoad: onLoad)
     }
 
     func makeUIView(context: Context) -> WKWebView {
@@ -354,17 +360,17 @@ struct UnityWebView: UIViewRepresentable {
         prefs.allowsContentJavaScript = true
         config.defaultWebpagePreferences = prefs
 
-        // Inject script to scale Unity canvas to fit narrow panels
+        // Inject script to scale Unity canvas — tweak initial-scale to zoom
         let scaleScript = """
         (function() {
             var meta = document.createElement('meta');
             meta.name = 'viewport';
-            meta.content = 'width=device-width, initial-scale=0.3, user-scalable=yes';
+            meta.content = 'width=device-width, initial-scale=1.25, user-scalable=yes';
             document.head.appendChild(meta);
             var style = document.createElement('style');
-            style.textContent = '#unity-container{width:100%!important;overflow:hidden}' +
-                '#unity-canvas{max-width:100%!important;height:auto!important}' +
-                'body{margin:0;overflow:hidden}';
+            style.textContent = '#unity-container{width:100%!important;overflow:visible}' +
+                '#unity-canvas{max-width:100%!important;height:auto!important;margin-left:0px;margin-top:-75px}' +
+                'body{margin:0;overflow:hidden;background:#000}';
             document.head.appendChild(style);
         })();
         """
@@ -392,6 +398,12 @@ struct UnityWebView: UIViewRepresentable {
     func updateUIView(_ webView: WKWebView, context: Context) {}
 
     class Coordinator: NSObject, WKNavigationDelegate {
+        let onLoad: (() -> Void)?
+
+        init(onLoad: (() -> Void)?) {
+            self.onLoad = onLoad
+        }
+
         func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
             print("[UnityWebView] Failed to load: \(error.localizedDescription)")
         }
@@ -402,6 +414,7 @@ struct UnityWebView: UIViewRepresentable {
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             print("[UnityWebView] Loaded successfully: \(webView.url?.absoluteString ?? "unknown")")
+            DispatchQueue.main.async { self.onLoad?() }
         }
     }
 }
