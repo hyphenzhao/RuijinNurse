@@ -7,120 +7,175 @@ struct ContentView: View {
     @State private var showLogin = false
     @State private var sidebarCollapsed = true
 
+    private let digitalHumanWidth: CGFloat = 350
+    private let sidebarWidth: CGFloat = 260
+
     var body: some View {
         if vm.needsSetup {
-            // First launch — show setup screen
             SetupView()
         } else {
-            // Main chat interface
             mainView
         }
     }
 
-    // MARK: - Main Chat View
+    // MARK: - Main Chat View (ZStack-based layered layout)
 
     var mainView: some View {
-        NavigationSplitView {
-            AgentListView()
-                .navigationSplitViewColumnWidth(sidebarCollapsed ? 0.1 : 210)
-        } content: {
+        ZStack(alignment: .topLeading) {
+
+            // ═══ Layer 0: Full-screen background ═══
+            backgroundLayer
+
+            // ═══ Layer 1: Content stack ═══
             VStack(spacing: 0) {
-                // Top bar with controls (more reliable than toolbar in SplitView)
-                HStack {
-                    // Sidebar toggle
-                    Button {
-                        withAnimation { sidebarCollapsed.toggle() }
-                    } label: {
-                        Image(systemName: sidebarCollapsed ? "sidebar.left" : "sidebar.left")
-                            .font(.title3)
-                            .foregroundColor(sidebarCollapsed ? .secondary : .blue)
-                    }
-
-                    Text("🏥 瑞金神外护理助手")
-                        .font(.headline)
-                    Spacer()
-                    // Auto-read toggle
-                    Button {
-                        vm.autoReadEnabled.toggle()
-                    } label: {
-                        Image(systemName: vm.autoReadEnabled ? "speaker.wave.2.fill" : "speaker.wave.2")
-                            .font(.system(size: 18))
-                            .foregroundColor(vm.autoReadEnabled ? .white : .primary)
-                            .padding(6)
-                            .background(vm.autoReadEnabled ? Color.blue : Color(.systemGray5))
-                            .clipShape(Circle())
-                    }
-                    .disabled(!vm.isLoggedIn)
-
-                    Circle()
-                        .fill(connectionColor)
-                        .frame(width: 10, height: 10)
-
-                    Button {
-                        showLogin = true
-                    } label: {
-                        Image(systemName: vm.isLoggedIn ? "person.circle.fill" : "person.circle")
-                            .font(.title3)
-                    }
-
-                    Button {
-                        showConfig = true
-                    } label: {
-                        Image(systemName: "gearshape")
-                            .font(.title3)
-                    }
-                }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(Color(.systemBackground))
-
+                topBar
                 connectionBanner
-                ChatMessagesView()
-                ChatInputView()
+                mainContentArea
             }
-        } detail: {
-            mediaPanel
-                .navigationSplitViewColumnWidth(0.1)
+
+            // ═══ Layer 2: Sidebar overlay ═══
+            sidebarOverlay
         }
-        .navigationTitle("")
-        .sheet(isPresented: $showConfig) {
-            ServerConfigView()
-        }
-        .sheet(isPresented: $showLogin) {
-            LoginView()
+        .animation(.easeOut(duration: 0.25), value: sidebarCollapsed)
+        .sheet(isPresented: $showConfig) { ServerConfigView() }
+        .sheet(isPresented: $showLogin) { LoginView() }
+    }
+
+    // MARK: - Layer 0: Background
+
+    @ViewBuilder
+    private var backgroundLayer: some View {
+        if vm.connectionState == .connected, let unityURL = vm.unityWebGLURL {
+            UnityWebView(url: unityURL)
+                .id("unity-webview")
+                .ignoresSafeArea()
+        } else {
+            Color(.systemGroupedBackground)
+                .ignoresSafeArea()
         }
     }
 
-    // MARK: - Media Panel (Unity WebGL)
+    // MARK: - Layer 1a: Top Bar
+
+    private var topBar: some View {
+        HStack {
+            // Sidebar toggle
+            Button {
+                withAnimation { sidebarCollapsed.toggle() }
+            } label: {
+                Image(systemName: "sidebar.left")
+                    .font(.title3)
+                    .foregroundColor(sidebarCollapsed ? .secondary : .blue)
+            }
+
+            Text("🏥 瑞金神外护理助手")
+                .font(.headline)
+            Spacer()
+
+            // Auto-read toggle
+            Button {
+                vm.autoReadEnabled.toggle()
+            } label: {
+                Image(systemName: vm.autoReadEnabled ? "speaker.wave.2.fill" : "speaker.wave.2")
+                    .font(.system(size: 18))
+                    .foregroundColor(vm.autoReadEnabled ? .white : .primary)
+                    .padding(6)
+                    .background(vm.autoReadEnabled ? Color.blue : Color(.systemGray5))
+                    .clipShape(Circle())
+            }
+            .disabled(!vm.isLoggedIn)
+
+            Circle()
+                .fill(connectionColor)
+                .frame(width: 10, height: 10)
+
+            Button {
+                showLogin = true
+            } label: {
+                Image(systemName: vm.isLoggedIn ? "person.circle.fill" : "person.circle")
+                    .font(.title3)
+            }
+
+            Button {
+                showConfig = true
+            } label: {
+                Image(systemName: "gearshape")
+                    .font(.title3)
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(Color(.systemBackground).opacity(0.92))
+    }
+
+    // MARK: - Layer 1b: Main Content Area
+
+    /// Spacing around the chat overlay — tweak these to adjust position
+    private let chatMarginTop: CGFloat = 50
+    private let chatMarginBottom: CGFloat = 30
+    private let chatMarginTrailing: CGFloat = 20
+
+    private var mainContentArea: some View {
+        HStack(spacing: 0) {
+            // Left: 3D digital human placeholder
+            digitalHumanPlaceholder
+
+            // Right: Chat overlay with margins (doesn't touch screen edges)
+            chatOverlay
+                .padding(.top, chatMarginTop)
+                .padding(.bottom, chatMarginBottom)
+                .padding(.trailing, chatMarginTrailing)
+        }
+    }
+
+    // 3D Digital Human placeholder
+    private var digitalHumanPlaceholder: some View {
+        Rectangle()
+            .fill(Color.black.opacity(0.08))
+            .overlay(
+                VStack(spacing: 8) {
+                    Image(systemName: "person.fill.viewfinder")
+                        .font(.system(size: 36))
+                        .foregroundColor(.white.opacity(0.7))
+                    Text("3D 数智人")
+                        .font(.caption)
+                        .foregroundColor(.white.opacity(0.6))
+                }
+            )
+            .frame(width: digitalHumanWidth)
+    }
+
+    // Chat overlay — frosted glass rounded container
+    private var chatOverlay: some View {
+        VStack(spacing: 0) {
+            ChatMessagesView()
+            ChatInputView()
+        }
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+    }
+
+    // MARK: - Layer 2: Sidebar Overlay
 
     @ViewBuilder
-    private var mediaPanel: some View {
-        VStack(spacing: 0) {
-            Text("📺 参考内容")
-                .font(.headline)
-                .padding(.top, 8)
-                .padding(.bottom, 8)
+    private var sidebarOverlay: some View {
+        if !sidebarCollapsed {
+            HStack(spacing: 0) {
+                AgentListView()
+                    .frame(width: sidebarWidth)
+                    .background(Color(.systemBackground))
 
-            if vm.connectionState == .connected, let unityURL = vm.unityWebGLURL {
-                UnityWebView(url: unityURL)
-                    .cornerRadius(12)
-                    .padding(8)
-            } else {
-                Rectangle()
-                    .fill(Color(.systemGray6))
-                    .cornerRadius(12)
-                    .overlay(
-                        VStack(spacing: 8) {
-                            Image(systemName: "play.rectangle")
-                                .font(.largeTitle)
-                                .foregroundColor(.secondary)
-                            Text("连接服务器后自动加载内容")
-                                .foregroundColor(.secondary)
-                                .font(.caption)
+                // Dimmed backdrop — tap to dismiss
+                Color.black.opacity(0.2)
+                    .ignoresSafeArea()
+                    .onTapGesture {
+                        withAnimation(.easeOut(duration: 0.25)) {
+                            sidebarCollapsed = true
                         }
-                    )
-                    .padding(8)
+                    }
             }
+            .transition(.move(edge: .leading))
+            .zIndex(100)
         }
     }
 
@@ -325,7 +380,12 @@ struct UnityWebView: UIViewRepresentable {
         webView.scrollView.maximumZoomScale = 2.0
         webView.isOpaque = false
         webView.backgroundColor = .black
-        webView.load(URLRequest(url: url))
+
+        // Use standard HTTP caching — WKWebView automatically handles
+        // ETag / If-None-Match and Last-Modified / If-Modified-Since:
+        //   304 Not Modified → serves from cache (fast)
+        //   200 OK           → loads new content (server updated)
+        webView.load(URLRequest(url: url, timeoutInterval: 30))
         return webView
     }
 

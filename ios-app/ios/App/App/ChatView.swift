@@ -30,7 +30,7 @@ struct ChatMessagesView: View {
                 }
                 .padding(12)
             }
-            .background(Color(.systemGroupedBackground))
+            .background(Color.clear)
             .onChange(of: vm.messages.count) { _ in
                 scrollToBottom(proxy: proxy)
             }
@@ -876,7 +876,7 @@ struct ChatInputView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
-        .background(Color(.systemBackground))
+        .background(Color.clear)
         .onAppear {
             Task { await speechRecognizer.requestAuthorization() }
         }
