@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import UIKit
 
 /// Central state for the chat application.
 /// Handles API communication, authentication, and chat state.
@@ -31,11 +32,24 @@ class ChatViewModel: ObservableObject {
 
     // MARK: - Chat
     @Published var messages: [ChatMessage] = []
-    @Published var isStreaming = false
+    @Published var isStreaming = false {
+        didSet {
+            // Keep the screen awake while streaming: the model's "thinking" phase
+            // sends no data for minutes, and if the iPad auto-locks the app gets
+            // backgrounded and the stream dies.
+            UIApplication.shared.isIdleTimerDisabled = isStreaming
+        }
+    }
     @Published var streamingThinking = ""
     @Published var streamingAnswer = ""
     @Published var showIntroVideo = true   // Show intro video on launch (matches web)
     @Published var autoReadEnabled = true   // Auto-read enabled by default
+    /// Message ids appended during a failed stream (partial answer + error) — removed on retry.
+    private var failedMessageIDs: [UUID] = []
+    /// Question text of the stream currently in flight — attached to the error message on failure.
+    private var currentQuestion: String?
+    /// Consecutive auto-retry attempts for the current question (max 2).
+    private var autoRetryCount = 0
 
     /// Set by AppDelegate — used for auto-reading responses after generation completes
     weak var ttsManager: TTSManager?
@@ -186,22 +200,27 @@ class ChatViewModel: ObservableObject {
     }
 
     // MARK: - Chat
-    func sendMessage(_ text: String) {
+    func sendMessage(_ text: String, isAutoRetry: Bool = false) {
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         guard isLoggedIn, let token = jwtAccess else {
             addSystemMessage("⚠️ 请先登录")
             return
         }
+        if !isAutoRetry {
+            autoRetryCount = 0
+        }
 
         let userMsg = ChatMessage(role: .user, content: text, thinking: nil, timestamp: Date())
         messages.append(userMsg)
 
+        currentQuestion = text
         isStreaming = true
         streamingThinking = ""
         streamingAnswer = ""
         showIntroVideo = false  // Hide intro video after user starts chatting
 
         let model = selectedModelKey.isEmpty ? defaultModelKey : selectedModelKey
+        print("[ChatViewModel] ✉️ 发送问题 (model=\(model)): \(text.prefix(50))\(text.count > 50 ? "…" : "")")
         let body: [String: Any] = ["text": text, "model": model]
         guard let bodyData = try? JSONSerialization.data(withJSONObject: body) else { return }
 
@@ -224,6 +243,22 @@ class ChatViewModel: ObservableObject {
         streamingThinking = ""
     }
 
+    /// Re-send a question after its stream failed.
+    /// Removes the partial answer + error message first, then restarts generation.
+    func retryFailedQuestion(_ question: String) {
+        guard !isStreaming else { return }
+        sseClient.disconnect()
+        ttsManager?.stop()
+        messages.removeAll { failedMessageIDs.contains($0.id) }
+        failedMessageIDs = []
+        isStreaming = false
+        streamingAnswer = ""
+        streamingThinking = ""
+        autoRetryCount = 0
+        addSystemMessage("🔄 已重新发起提问")
+        sendMessage(question)
+    }
+
     // MARK: - Private
     private func setupSSECallbacks() {
         sseClient.onThinking = { [weak self] text in
@@ -232,33 +267,79 @@ class ChatViewModel: ObservableObject {
         sseClient.onDelta = { [weak self] text in
             self?.streamingAnswer += text
         }
-        sseClient.onDone = { [weak self] final in
+        sseClient.onDone = { [weak self] final, cleanDone in
             guard let self = self else { return }
             let content = final.isEmpty ? self.streamingAnswer : final
             let think = self.streamingThinking.isEmpty ? nil : self.streamingThinking
-            let msg = ChatMessage(role: .assistant, content: content, thinking: think, timestamp: Date())
-            self.messages.append(msg)
+            let question = self.currentQuestion
             self.isStreaming = false
-
-            // Auto-read: speak the entire response once generation is complete
-            if self.autoReadEnabled, let tts = self.ttsManager {
-                tts.speak(content)
-            }
-
             self.streamingAnswer = ""
             self.streamingThinking = ""
+            self.currentQuestion = nil
+            // A completion invalidates any pending manual-retry state
+            self.failedMessageIDs = []
+
+            let emptyAnswer = content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            let needsAutoRetry = (emptyAnswer || !cleanDone) && question != nil && self.autoRetryCount < 2
+
+            // Show whatever content we did receive (even partial)
+            if !emptyAnswer {
+                let msg = ChatMessage(role: .assistant, content: content, thinking: think, timestamp: Date())
+                self.messages.append(msg)
+            }
+
+            if needsAutoRetry, let question = question {
+                self.autoRetryCount += 1
+                let reason = emptyAnswer ? "本次未收到回答内容" : "连接在完成前中断"
+                print("[ChatViewModel] 🔁 自动重试 \(self.autoRetryCount)/2（\(reason)）")
+                self.addSystemMessage("⚠️ \(reason)，自动重试（第 \(self.autoRetryCount)/2 次）…")
+                self.sendMessage(question, isAutoRetry: true)
+                return
+            }
+
+            self.autoRetryCount = 0
+            if emptyAnswer {
+                self.addSystemMessage("⚠️ 模型未返回内容，请点击重试按钮或重新提问。")
+            } else {
+                // Auto-read: speak the entire response once generation is complete
+                if self.autoReadEnabled, let tts = self.ttsManager {
+                    tts.speak(content)
+                }
+            }
         }
         sseClient.onError = { [weak self] error in
             guard let self = self else { return }
-            if !self.streamingAnswer.isEmpty {
-                let msg = ChatMessage(role: .assistant, content: self.streamingAnswer, thinking: self.streamingThinking.isEmpty ? nil : self.streamingThinking, timestamp: Date())
-                self.messages.append(msg)
-            }
-            self.addSystemMessage("❌ 错误: \(error)")
+            print("[ChatViewModel] ❌ 流错误: \(error)")
+            let partial = self.streamingAnswer
+            let think = self.streamingThinking.isEmpty ? nil : self.streamingThinking
+            let question = self.currentQuestion
             self.isStreaming = false
             self.streamingAnswer = ""
             self.streamingThinking = ""
+            self.currentQuestion = nil
             self.ttsManager?.stop()
+            self.failedMessageIDs = []
+
+            // Auto-recover: re-ask the same question (like EventSource reconnect on the web)
+            if let question = question, self.autoRetryCount < 2 {
+                self.autoRetryCount += 1
+                print("[ChatViewModel] 🔁 自动重试 \(self.autoRetryCount)/2（错误: \(error)）")
+                self.addSystemMessage("⚠️ 连接中断，自动重试（第 \(self.autoRetryCount)/2 次）…")
+                self.sendMessage(question, isAutoRetry: true)
+                return
+            }
+
+            // Give up after 2 attempts — show partial + error + manual retry button
+            self.autoRetryCount = 0
+            if !partial.isEmpty {
+                let msg = ChatMessage(role: .assistant, content: partial, thinking: think, timestamp: Date())
+                self.messages.append(msg)
+                self.failedMessageIDs.append(msg.id)
+            }
+            var errMsg = ChatMessage(role: .system, content: "❌ 错误: \(error)", thinking: nil, timestamp: Date())
+            errMsg.retryQuestion = question  // attach the question for the retry button
+            self.messages.append(errMsg)
+            self.failedMessageIDs.append(errMsg.id)
         }
     }
 

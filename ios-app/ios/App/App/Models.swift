@@ -69,6 +69,9 @@ struct ChatMessage: Identifiable {
     let content: String
     let thinking: String?
     let timestamp: Date
+    /// When set on a failed-stream error message, shows a retry button that
+    /// re-sends this exact question.
+    var retryQuestion: String?
 
     enum MessageRole {
         case user, assistant, system
@@ -112,7 +115,11 @@ struct ModelsListResponse: Codable {
 // MARK: - Media Item (for inline media cards in chat)
 
 struct MediaItem: Identifiable {
-    let id = UUID()
+    /// Stable identity derived from the URL. A fresh UUID here would make
+    /// SwiftUI treat the item as a NEW view on every body evaluation
+    /// (e.g. each streaming delta), destroying and recreating the media
+    /// card — which restarts its video hundreds of times per second.
+    var id: String { url }
     let label: String
     let url: String
     let type: MediaType

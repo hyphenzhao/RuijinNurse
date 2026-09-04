@@ -23,3 +23,6 @@ ios/UnityBuild/
 # Misc
 .DS_Store
 *.log
+
+# Local code index
+.codegraph/

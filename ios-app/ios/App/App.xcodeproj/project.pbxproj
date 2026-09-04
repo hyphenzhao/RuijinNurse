@@ -24,6 +24,8 @@
 		89D5505D2FD2AFEE003ECE46 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 89D550542FD2AFEE003ECE46 /* ContentView.swift */; };
 		89D5505F2FD2AFEE003ECE46 /* ChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 89D550522FD2AFEE003ECE46 /* ChatView.swift */; };
 		89D550602FD2AFEE003ECE46 /* ChatViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 89D550532FD2AFEE003ECE46 /* ChatViewModel.swift */; };
+		A5A5A5A50000000000000002 /* MarkdownWebView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5A5A5A50000000000000001 /* MarkdownWebView.swift */; };
+		A5A5A5A50000000000000004 /* markdown-assets in Resources */ = {isa = PBXBuildFile; fileRef = A5A5A5A50000000000000003 /* markdown-assets */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -47,6 +49,8 @@
 		89D550552FD2AFEE003ECE46 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
 		89D550572FD2AFEE003ECE46 /* ServerConfigView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerConfigView.swift; sourceTree = "<group>"; };
 		89D550582FD2AFEE003ECE46 /* SSEClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SSEClient.swift; sourceTree = "<group>"; };
+		A5A5A5A50000000000000001 /* MarkdownWebView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownWebView.swift; sourceTree = "<group>"; };
+		A5A5A5A50000000000000003 /* markdown-assets */ = {isa = PBXFileReference; lastKnownFileType = folder; path = "markdown-assets"; sourceTree = "<group>"; };
 		EDD2655E6B2F1CA0F342FF16 /* Pods-App.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-App.debug.xcconfig"; path = "Target Support Files/Pods-App/Pods-App.debug.xcconfig"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -92,6 +96,7 @@
 				89D550552FD2AFEE003ECE46 /* Models.swift */,
 				89D550572FD2AFEE003ECE46 /* ServerConfigView.swift */,
 				89D550582FD2AFEE003ECE46 /* SSEClient.swift */,
+				A5A5A5A50000000000000001 /* MarkdownWebView.swift */,
 				50379B222058CBB4000EE86E /* capacitor.config.json */,
 				504EC3071FED79650016851F /* AppDelegate.swift */,
 				504EC30B1FED79650016851F /* Main.storyboard */,
@@ -100,6 +105,7 @@
 				504EC3131FED79650016851F /* Info.plist */,
 				2FAD9762203C412B000D30F8 /* config.xml */,
 				50B271D01FEDC1A000F3C39B /* public */,
+				A5A5A5A50000000000000003 /* markdown-assets */,
 			);
 			path = App;
 			sourceTree = "<group>";
@@ -188,6 +194,7 @@
 				50379B232058CBB4000EE86E /* capacitor.config.json in Resources */,
 				504EC30D1FED79650016851F /* Main.storyboard in Resources */,
 				2FAD9763203C412B000D30F8 /* config.xml in Resources */,
+				A5A5A5A50000000000000004 /* markdown-assets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -247,6 +254,7 @@
 				89D5505D2FD2AFEE003ECE46 /* ContentView.swift in Sources */,
 				89D5505F2FD2AFEE003ECE46 /* ChatView.swift in Sources */,
 				89D550602FD2AFEE003ECE46 /* ChatViewModel.swift in Sources */,
+				A5A5A5A50000000000000002 /* MarkdownWebView.swift in Sources */,
 				504EC3081FED79650016851F /* AppDelegate.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

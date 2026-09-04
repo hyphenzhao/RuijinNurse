@@ -6,6 +6,7 @@ import Speech
 
 struct ChatMessagesView: View {
     @EnvironmentObject var vm: ChatViewModel
+    @State private var lastScrollTime = Date.distantPast
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -35,10 +36,18 @@ struct ChatMessagesView: View {
                 scrollToBottom(proxy: proxy)
             }
             .onChange(of: vm.streamingAnswer) { _ in
-                scrollToBottom(proxy: proxy)
+                // Throttle: deltas arrive 50+/s — scrolling every one churns the UI
+                let now = Date()
+                if now.timeIntervalSince(lastScrollTime) > 0.2 {
+                    lastScrollTime = now
+                    scrollToBottom(proxy: proxy)
+                }
             }
             .onChange(of: vm.isStreaming) { streaming in
                 if streaming {
+                    scrollToBottom(proxy: proxy)
+                } else {
+                    // Final scroll to the completed message
                     scrollToBottom(proxy: proxy)
                 }
             }
@@ -444,6 +453,14 @@ struct MessageBubbleView: View {
                             .cornerRadius(12)
                             .textSelection(.enabled)
                     }
+
+                    // Retry button on failed streams — re-sends this message's question.
+                    // Lives in its own view so the heavy bubble doesn't observe
+                    // ChatViewModel (whose per-delta publishes would otherwise
+                    // re-evaluate every bubble during streaming).
+                    if let retryQuestion = message.retryQuestion {
+                        RetryButtonView(question: retryQuestion)
+                    }
                 }
             }
             .frame(maxWidth: message.role == .user ? 280 : .infinity, alignment: message.role == .user ? .trailing : .leading)
@@ -482,50 +499,42 @@ struct MessageBubbleView: View {
     }
 }
 
-// MARK: - Markdown Content (iOS 15+ native)
+// MARK: - Markdown Content (WKWebView renderer — same pipeline as the web UI)
 
 struct MarkdownContentView: View {
     let content: String
-
-    /// Check if content has markdown block syntax (tables, headings, lists, code)
-    private var hasBlockSyntax: Bool {
-        content.contains("|") ||           // likely a table
-        content.contains("```") ||         // code block
-        content.contains("\n#") ||         // heading
-        content.contains("\n- ") ||        // bullet list
-        content.contains("\n* ") ||        // bullet list alt
-        content.contains("\n> ")           // blockquote
-    }
-
-    private var attributedContent: AttributedString {
-        if #available(iOS 15.0, *) {
-            if hasBlockSyntax {
-                // .full mode: renders tables, headings, code blocks, lists
-                // Use  \n for hard line breaks (standard markdown)
-                let processed = content.replacingOccurrences(of: "\n", with: "  \n")
-                if let md = try? AttributedString(
-                    markdown: processed,
-                    options: AttributedString.MarkdownParsingOptions(interpretedSyntax: .full)
-                ) {
-                    return md
-                }
-            } else {
-                // .inlineOnly mode: preserves all line breaks, renders **bold** *italic* etc.
-                if let md = try? AttributedString(
-                    markdown: content,
-                    options: AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace)
-                ) {
-                    return md
-                }
-            }
-        }
-        return AttributedString(content)
-    }
+    @EnvironmentObject var vm: ChatViewModel
+    @State private var webHeight: CGFloat = 0
 
     var body: some View {
-        Text(attributedContent)
-            .font(.subheadline)
-            .textSelection(.enabled)
+        MarkdownWebView(content: content,
+                        baseURL: URL(string: vm.serverURL),
+                        height: $webHeight)
+            .frame(height: max(webHeight, 1))
+            .background(Color.clear)
+    }
+}
+
+// MARK: - Retry Button (failed stream)
+
+struct RetryButtonView: View {
+    let question: String
+    @EnvironmentObject var vm: ChatViewModel
+
+    var body: some View {
+        Button {
+            vm.retryFailedQuestion(question)
+        } label: {
+            Label("重试提问", systemImage: "arrow.clockwise")
+                .font(.caption)
+                .foregroundColor(.blue)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 4)
+                .background(Color.blue.opacity(0.1))
+                .cornerRadius(8)
+        }
+        .buttonStyle(.plain)
+        .disabled(vm.isStreaming)
     }
 }
 
@@ -571,6 +580,7 @@ struct ThinkingBubbleView: View {
 struct StreamingBubbleView: View {
     let thinking: String
     let answer: String
+    @EnvironmentObject var vm: ChatViewModel
     @State private var thinkingExpanded = true  // Auto-expand during streaming
 
     var body: some View {

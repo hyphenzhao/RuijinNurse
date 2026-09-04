@@ -391,6 +391,7 @@ struct UnityWebView: UIViewRepresentable {
         // ETag / If-None-Match and Last-Modified / If-Modified-Since:
         //   304 Not Modified → serves from cache (fast)
         //   200 OK           → loads new content (server updated)
+        context.coordinator.loadURL = url
         webView.load(URLRequest(url: url, timeoutInterval: 30))
         return webView
     }
@@ -399,6 +400,7 @@ struct UnityWebView: UIViewRepresentable {
 
     class Coordinator: NSObject, WKNavigationDelegate {
         let onLoad: (() -> Void)?
+        var loadURL: URL?
 
         init(onLoad: (() -> Void)?) {
             self.onLoad = onLoad
@@ -415,6 +417,15 @@ struct UnityWebView: UIViewRepresentable {
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             print("[UnityWebView] Loaded successfully: \(webView.url?.absoluteString ?? "unknown")")
             DispatchQueue.main.async { self.onLoad?() }
+        }
+
+        /// Recover when the system kills the WebContent process (memory pressure) —
+        /// reload the Unity scene instead of leaving a blank background.
+        func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+            print("[UnityWebView] WebContent 进程被终止，重新加载 Unity")
+            let reloadURL = webView.url ?? loadURL
+            guard let reloadURL = reloadURL else { return }
+            webView.load(URLRequest(url: reloadURL, timeoutInterval: 30))
         }
     }
 }
