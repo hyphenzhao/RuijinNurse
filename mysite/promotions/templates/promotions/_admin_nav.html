@@ -1,0 +1,27 @@
+{% comment %} 管理区共享顶部导航：系统管理 / 数据分析 / 患者管理 {% endcomment %}
+<style>
+    .admin-topnav {
+        display:flex; align-items:center; gap:8px; flex-wrap:wrap;
+        background:#ffffff; border:1px solid #d9e0ea; border-radius:12px;
+        padding:10px 14px; margin-bottom:20px; box-shadow:0 4px 14px rgba(0,0,0,0.04);
+    }
+    .admin-topnav .admin-brand {
+        font-weight:700; font-size:15px; color:#1f2937; margin-right:8px; white-space:nowrap;
+    }
+    .admin-topnav a.admin-tab {
+        display:inline-flex; align-items:center; gap:6px;
+        padding:8px 16px; border-radius:8px; font-size:14px; text-decoration:none;
+        color:#6b7280; border:1px solid #d9e0ea; background:transparent; white-space:nowrap;
+    }
+    .admin-topnav a.admin-tab:hover { border-color:#2563eb; color:#2563eb; }
+    .admin-topnav a.admin-tab.active { background:#2563eb; border-color:#2563eb; color:#ffffff; font-weight:600; }
+    .admin-topnav .admin-spacer { flex:1; }
+</style>
+<nav class="admin-topnav">
+    <span class="admin-brand">🛏 瑞金功能神经外科 · 管理后台</span>
+    <a class="admin-tab {% if active_tab == 'setup' %}active{% endif %}" href="{% url 'setup' %}">⚙️ 系统管理</a>
+    <a class="admin-tab {% if active_tab == 'analytics' %}active{% endif %}" href="{% url 'analytics' %}">📊 数据分析</a>
+    <a class="admin-tab {% if active_tab == 'patients' %}active{% endif %}" href="{% url 'patients' %}">🛏 患者管理</a>
+    <span class="admin-spacer"></span>
+    <a class="admin-tab" href="{% url 'promotion' %}">🏥 返回宣讲页面</a>
+</nav>

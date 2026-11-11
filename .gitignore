@@ -151,3 +151,21 @@ mysite/promotions/runtime_sessions/*
 !mysite/promotions/runtime_sessions/.gitkeep
 
 .codegraph/
+
+# Deployment-specific content and generated answers remain on the server.
+mysite/db.sqlite3.*
+mysite/promotions/static/promotions/role.txt
+mysite/promotions/static/promotions/knowledge.txt
+mysite/promotions/static/promotions/knowledge_updated.txt
+mysite/promotions/static/promotions/single_model_config.json
+mysite/promotions/static/promotions/input.txt
+mysite/promotions/static/promotions/msc/
+mysite/promotions/static/bootstrap-5.3.3/.git/
+# Existing tracked Bootstrap assets remain tracked; omit additional vendor source copies.
+mysite/promotions/static/bootstrap-5.3.3/
+.claude/
+production.json
+server.lock
+
+# macOS resource forks are not Python/source files.
+._*

@@ -1,0 +1,3 @@
+# Install alongside the application's existing requirements, not a replacement.
+waitress==3.0.2
+whitenoise==6.12.0

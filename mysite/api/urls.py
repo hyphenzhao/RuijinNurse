@@ -12,6 +12,7 @@ urlpatterns = [
     # Chat
     path('chat/stream/', views.ChatStreamView.as_view(), name='api_chat_stream'),
     path('chat/stop/', views.ChatStopView.as_view(), name='api_chat_stop'),
+    path('chat/timing/', views.ChatTimingView.as_view(), name='api_chat_timing'),
 
     # Agents
     path('agents/', views.AgentListView.as_view(), name='api_agents'),

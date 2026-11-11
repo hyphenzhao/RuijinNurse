@@ -11,6 +11,8 @@ https://docs.djangoproject.com/en/4.2/ref/settings/
 """
 
 import os
+import json
+from django.core.exceptions import ImproperlyConfigured
 from pathlib import Path
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -21,12 +23,31 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/4.2/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-%g7=pyqmblxn_(%71j0r$b5@wth_0uc@t6ixoo!lm#nc6d&0$^'
+# Loaded from a private deployment configuration below.
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = os.environ.get('DJANGO_DEBUG', '0').lower() in ('1', 'true', 'yes')
 
-ALLOWED_HOSTS = ['*']
+# Production values live outside the checkout; never commit credentials or patient data.
+_config_path = os.environ.get('RUIJIN_CONFIG_FILE')
+if not _config_path and os.name == 'nt' and os.environ.get('LOCALAPPDATA'):
+    _config_path = str(Path(os.environ['LOCALAPPDATA']) / 'RuijinNurse' / 'production.json')
+_private = {}
+if _config_path:
+    with open(_config_path, encoding='utf-8-sig') as _config_file:
+        _private = json.load(_config_file)
+
+SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY') or _private.get('SECRET_KEY')
+if not SECRET_KEY:
+    if DEBUG:
+        from django.core.management.utils import get_random_secret_key
+        SECRET_KEY = get_random_secret_key()
+    else:
+        raise ImproperlyConfigured('Set DJANGO_SECRET_KEY or RUIJIN_CONFIG_FILE before starting the service.')
+
+ALLOWED_HOSTS = [host.strip() for host in os.environ['RUIJIN_ALLOWED_HOSTS'].split(',') if host.strip()] if os.environ.get('RUIJIN_ALLOWED_HOSTS') else _private.get('ALLOWED_HOSTS', ['localhost', '127.0.0.1', '[::1]'])
+if not DEBUG and (not ALLOWED_HOSTS or '*' in ALLOWED_HOSTS):
+    raise ImproperlyConfigured('Production ALLOWED_HOSTS must list explicit hosts.')
 
 
 # Application definition
@@ -90,6 +111,8 @@ DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.sqlite3',
         'NAME': BASE_DIR / 'db.sqlite3',
+        # 批量提取关键词/主题（数据分析页手动触发）与聊天流并发写库时的锁等待余量
+        'OPTIONS': {'timeout': 30},
     }
 }
 
@@ -118,7 +141,8 @@ AUTH_PASSWORD_VALIDATORS = [
 
 LANGUAGE_CODE = 'en-us'
 
-TIME_ZONE = 'UTC'
+# 数据分析按本地日历日聚合（趋势图/今日统计），DB 内时间戳仍以 UTC 存储
+TIME_ZONE = 'Asia/Shanghai'
 
 USE_I18N = True
 
@@ -174,7 +198,7 @@ SIMPLE_JWT = {
 }
 
 # CORS — in development allow all origins; restrict in production
-CORS_ALLOWED_ORIGINS = []
+CORS_ALLOWED_ORIGINS = _private.get('CORS_ALLOWED_ORIGINS', ['capacitor://localhost', 'ionic://localhost', 'http://localhost'])
 CORS_ALLOW_ALL_ORIGINS = DEBUG
 CORS_ALLOW_CREDENTIALS = True
 

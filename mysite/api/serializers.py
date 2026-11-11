@@ -39,6 +39,8 @@ class ChatRequestSerializer(serializers.Serializer):
         help_text='Format: "agent:{slug}", "model:{name}", or legacy local key',
     )
     session_id = serializers.CharField(max_length=100, required=False)
+    # 可选：App 端后续可传患者 ID 以关联问答记录（不传则行为与旧版一致）
+    patient_id = serializers.IntegerField(required=False, min_value=1)
 
 
 class ChatMessageSerializer(serializers.Serializer):

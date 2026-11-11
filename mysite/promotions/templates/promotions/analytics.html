@@ -1,0 +1,712 @@
+{% load static %}<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>数据分析</title>
+    <style>
+        :root {
+            --bg: #f6f8fb; --card: #ffffff; --border: #d9e0ea;
+            --text: #1f2937; --muted: #6b7280;
+            --primary: #2563eb; --primary-dark: #1d4ed8;
+            --success: #059669; --danger: #dc2626; --warning: #d97706;
+            /* 图表分类调色板（dataviz 校验过的浅色 7 槽，超出并入灰色） */
+            --c1: #2a78d6; --c2: #eb6834; --c3: #1baf7a; --c4: #eda100;
+            --c5: #e87ba4; --c6: #008300; --c7: #4a3aa7; --c-gray: #9ca3af;
+        }
+        * { box-sizing: border-box; }
+        body { margin:0; font-family: Arial,"Microsoft YaHei",sans-serif; background:var(--bg); color:var(--text); }
+        .page { max-width:1280px; margin:24px auto; padding:0 16px 24px; }
+        .page-header { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:8px; }
+        .page-header h1 { margin:0; font-size:28px; }
+        .section { margin-bottom:20px; border:1px solid var(--border); padding:18px; border-radius:12px; background:var(--card); box-shadow:0 4px 14px rgba(0,0,0,0.04); }
+        .section-header { display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:12px; }
+        .section h2,.section h3 { margin:0; }
+        .hint { font-size:13px; color:var(--muted); margin:8px 0 0; line-height:1.5; }
+        table { width:100%; border-collapse:collapse; margin-top:10px; background:white; }
+        th,td { border:1px solid #e5e7eb; padding:10px 12px; font-size:14px; text-align:left; vertical-align:top; }
+        th { background:#f3f4f6; }
+        .button-row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+        button,.btn { appearance:none; border:0; border-radius:8px; padding:9px 14px; font-size:14px; cursor:pointer; text-decoration:none; display:inline-flex; align-items:center; justify-content:center; }
+        .btn-primary { background:var(--primary); color:white; }
+        .btn-primary:hover { background:var(--primary-dark); }
+        .btn-primary:disabled { background:#9db8ec; cursor:not-allowed; }
+        .btn-secondary { background:#eef2ff; color:var(--primary); border:1px solid #c7d2fe; }
+        .btn-outline { background:transparent; color:var(--muted); border:1px solid var(--border); }
+        .btn-danger { background:#fee2e2; color:var(--danger); border:1px solid #fecaca; }
+        input[type="text"],input[type="date"],input[type="password"],select { padding:10px 12px; border:1px solid var(--border); border-radius:8px; font-size:14px; background:white; }
+        select { min-width:120px; }
+        .status-pill { display:inline-block; padding:4px 10px; border-radius:999px; font-size:12px; font-weight:600; }
+        .status-pending { background:#fef3c7; color:#92400e; }
+        .status-processing { background:#dbeafe; color:#1d4ed8; }
+        .status-done { background:#dcfce7; color:#166534; }
+        .status-error { background:#fee2e2; color:#991b1b; }
+        .empty-state { text-align:center; color:var(--muted); padding:18px 12px; }
+        .config-badge { display:inline-flex; align-items:center; gap:8px; padding:8px 12px; border-radius:999px; background:#eff6ff; border:1px solid #bfdbfe; color:#1d4ed8; font-size:13px; font-weight:600; }
+        /* ── 指标磁贴 ── */
+        .tile-row { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:12px; margin-bottom:12px; }
+        .stat-tile { background:var(--card); border:1px solid var(--border); border-radius:12px; padding:16px 18px; box-shadow:0 4px 14px rgba(0,0,0,0.04); }
+        .stat-tile .value { font-size:30px; font-weight:700; color:var(--text); line-height:1.2; }
+        .stat-tile .label { font-size:13px; color:var(--muted); margin-top:4px; }
+        /* ── 筛选行 ── */
+        .filter-row { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+        .filter-row label { font-size:13px; color:var(--muted); display:flex; flex-direction:column; gap:4px; }
+        /* ── 图表区 ── */
+        .chart-grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-top:12px; }
+        .chart-box { border:1px solid var(--border); border-radius:12px; padding:14px; background:var(--card); }
+        .chart-box h4 { margin:0 0 8px; font-size:15px; }
+        .chart { width:100%; height:320px; }
+        .chart-tall { height:360px; }
+        .timing-scroll { overflow-x:auto; }
+        .timing-scroll th { white-space:nowrap; }
+        .timing-id { max-width:200px; overflow-wrap:anywhere; }
+        #timingExport[hidden] { display:none; }
+        @media (max-width:900px) { .chart-grid { grid-template-columns:1fr; } }
+        /* ── AI 配置卡 ── */
+        .ai-config-row { display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; }
+        .ai-config-row .field { display:flex; flex-direction:column; gap:4px; }
+        .ai-config-row label { font-size:13px; color:var(--muted); }
+        .ai-config-row input[type="text"],.ai-config-row input[type="password"] { width:240px; }
+        .ai-status { margin-top:10px; font-size:13px; }
+        .ai-status.ok { color:var(--success); }
+        .ai-status.err { color:var(--danger); }
+        /* ── 洞察输出 ── */
+        .insight-output { margin-top:12px; padding:14px; border:1px solid var(--border); border-radius:10px; background:#fafbfc; line-height:1.7; font-size:14px; display:none; }
+        .insight-output.show { display:block; }
+        .insight-output h2 { font-size:17px; margin:14px 0 6px; }
+        .insight-output h3 { font-size:15px; margin:12px 0 6px; }
+        .insight-output ul { margin:6px 0; padding-left:20px; }
+        /* ── 分页 ── */
+        .pagination-row { display:flex; gap:8px; align-items:center; justify-content:flex-end; margin-top:10px; font-size:13px; color:var(--muted); }
+        .detail-modal { position:fixed; inset:0; background:rgba(15,23,42,0.45); display:none; align-items:center; justify-content:center; padding:16px; z-index:1000; }
+        .detail-modal.open { display:flex; }
+        .detail-content { width:min(860px,100%); max-height:86vh; overflow:auto; background:white; border-radius:14px; padding:20px; box-shadow:0 20px 50px rgba(0,0,0,0.2); }
+        .detail-content h3 { margin:0 0 10px; }
+        .detail-content .qa-block { border:1px solid var(--border); border-radius:8px; padding:10px 12px; margin-top:10px; white-space:pre-wrap; word-break:break-word; }
+        .detail-content .qa-block.q { background:#eff6ff; }
+        .detail-content .qa-block.a { background:#f0fdf4; }
+        .tag { display:inline-block; padding:2px 8px; border-radius:6px; font-size:12px; background:#f3f4f6; color:#4b5563; margin:0 4px 4px 0; }
+        .spinner { display:inline-block; width:14px; height:14px; border:2px solid #c7d2fe; border-top-color:var(--primary); border-radius:50%; animation:spin .8s linear infinite; vertical-align:-2px; margin-right:6px; }
+        @keyframes spin { to { transform:rotate(360deg); } }
+    </style>
+</head>
+<body>
+<div class="page">
+    {% include 'promotions/_admin_nav.html' %}
+    <div class="page-header">
+        <div><h1>数据分析</h1><p class="hint">量化了解患者关心什么 —— 高频问题、主题与关键词分析。</p></div>
+    </div>
+
+    <!-- ═══ AI 驱动配置（需求：API 地址 → 获取模型 → 选择模型，兼容 Ollama/OpenAI/DeepSeek） ═══ -->
+    <div class="section">
+        <div class="section-header">
+            <div><h2>🤖 AI 驱动配置</h2><p class="hint">用于关键词/主题提取与 AI 洞察简报。兼容 Ollama、OpenAI、DeepSeek 及 OpenAI 兼容接口。</p></div>
+            {% if ai_config %}
+            <span class="config-badge">当前生效：{{ ai_config.get_provider_type_display }} / {{ ai_config.model }} / {{ ai_config.base_url }}（Key 已隐藏）</span>
+            {% else %}
+            <span class="config-badge" style="background:#fef3c7;border-color:#fcd34d;color:#92400e;">尚未配置 AI 服务</span>
+            {% endif %}
+        </div>
+        <div class="ai-config-row">
+            <div class="field">
+                <label>服务类型</label>
+                <select id="aiProvider">
+                    <option value="ollama">Ollama</option>
+                    <option value="openai">OpenAI</option>
+                    <option value="deepseek">DeepSeek</option>
+                    <option value="custom_openai">OpenAI 兼容接口</option>
+                </select>
+            </div>
+            <div class="field">
+                <label>API 地址</label>
+                <input type="text" id="aiBaseUrl" placeholder="http://127.0.0.1:11434">
+            </div>
+            <div class="field" id="aiKeyField">
+                <label>API Key（Ollama 可留空）</label>
+                <input type="password" id="aiKey" placeholder="sk-...">
+            </div>
+            <div class="field">
+                <label>模型</label>
+                <div style="display:flex;gap:8px;">
+                    <select id="aiModel" style="min-width:200px;"><option value="">请先获取模型列表</option></select>
+                    <input type="text" id="aiModelManual" placeholder="或手动填写模型名" style="width:180px;">
+                </div>
+            </div>
+            <button class="btn btn-secondary" id="fetchModelsBtn">获取模型</button>
+            <button class="btn btn-primary" id="saveConfigBtn">保存配置</button>
+        </div>
+        <p id="aiConfigStatus" class="ai-status"></p>
+    </div>
+
+    <!-- ═══ AI 洞察 ═══ -->
+    <div class="section">
+        <div class="section-header">
+            <div><h2>✨ AI 洞察简报</h2><p class="hint">使用当前筛选条件与已配置 AI，生成护理数据分析简报。</p></div>
+            <button class="btn btn-primary" id="insightBtn" {% if not ai_config %}disabled{% endif %}>
+                生成 AI 洞察简报
+            </button>
+        </div>
+        <p class="hint" id="insightHint" style="display:none;"></p>
+        <div class="insight-output" id="insightOutput"></div>
+    </div>
+
+    <!-- ═══ 指标磁贴 ═══ -->
+    <div class="tile-row">
+        <div class="stat-tile"><div class="value" id="tileTotal">—</div><div class="label">总问答数（当前筛选）</div></div>
+        <div class="stat-tile"><div class="value" id="tileToday">—</div><div class="label">今日新增</div></div>
+        <div class="stat-tile"><div class="value" id="tilePatientLinked">—</div><div class="label">关联患者问答</div></div>
+        <div class="stat-tile"><div class="value" id="tileAvgLatency">—</div><div class="label">问答记录平均处理耗时</div></div>
+    </div>
+
+    <!-- ═══ 筛选 + 提取 ═══ -->
+    <div class="section">
+        <div class="filter-row">
+            <label>开始日期<input type="date" id="fStart" value="{{ default_start }}"></label>
+            <label>结束日期<input type="date" id="fEnd" value="{{ default_end }}"></label>
+            <label>患者
+                <select id="fPatient"><option value="">全部患者</option>
+                {% for p in patients %}<option value="{{ p.id }}">{{ p.bed_no }}床 {{ p.name }}</option>{% endfor %}
+                </select>
+            </label>
+            <label>疾病
+                <select id="fDisease"><option value="">全部疾病</option>
+                {% for value, label in disease_choices %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+                </select>
+            </label>
+            <label>主题
+                <select id="fTopic"><option value="">全部主题</option>
+                {% for t in topic_choices %}<option value="{{ t }}">{{ t }}</option>{% endfor %}
+                </select>
+            </label>
+            <label>关键词搜索<input type="text" id="fQ" placeholder="搜索问题内容" style="width:160px;"></label>
+            <button class="btn btn-secondary" id="refreshBtn">刷新</button>
+            <span style="flex:1;"></span>
+            <button class="btn btn-outline" id="extractBtn">🔧 提取未处理关键词/主题（<span id="pendingCount">{{ pending_count }}</span> 条待提取）</button>
+        </div>
+    </div>
+
+    <section class="section" aria-labelledby="timingHeading">
+        <div class="section-header">
+            <div>
+                <h2 id="timingHeading">问答等待时间</h2>
+                <p class="hint">统计网页和 App 的问答耗时。首字与完整回答等待使用客户端实测数据；未上报的旧版 App 仅有后台耗时，缺失值不计作零。耗时统计只使用成功回答。</p>
+            </div>
+            <a class="btn btn-outline" id="timingExport" hidden>导出计时 CSV</a>
+        </div>
+        <form class="filter-row" id="timingFilter">
+            <label>开始日期<input type="date" id="timingStart" value="{{ default_start }}" required></label>
+            <label>结束日期<input type="date" id="timingEnd" value="{{ default_end }}" required></label>
+            <label>模型<select id="timingModel"><option value="">全部模型</option></select></label>
+            <label>来源<select id="timingSource"><option value="">全部来源</option><option value="web">网页端</option><option value="api">App 端</option></select></label>
+            <button type="submit" class="btn btn-secondary">查看计时</button>
+        </form>
+        <p class="hint" id="timingStatus" role="status">正在加载计时记录…</p>
+        <div id="timingResults" hidden>
+            <p class="hint" id="timingCounts"></p>
+            <div class="timing-scroll">
+                <table>
+                    <thead><tr><th>计时指标</th><th>有效样本</th><th>平均</th><th>中位数</th><th>P95</th></tr></thead>
+                    <tbody id="timingMetrics"></tbody>
+                </table>
+            </div>
+            <p class="hint">P95 表示 95% 的有效样本在此时间内完成。失败率按成功、失败和超时计算，取消和中断单独列出。</p>
+            <div class="chart-box" id="timingChartBox" style="margin-top:12px;" hidden>
+                <h4>每日耗时趋势（秒）</h4>
+                <div class="chart" id="timingChart" role="img" aria-label="按日显示完整回答等待的中位数、P95 和后台处理的中位数"></div>
+            </div>
+            <h3 style="margin-top:16px;">计时明细</h3>
+            <div class="timing-scroll">
+                <table>
+                    <thead><tr><th>请求编号</th><th>开始时间</th><th>来源</th><th>模型</th><th>状态</th><th>首字等待</th><th>完整回答等待</th><th>后台首字</th><th>后台处理</th></tr></thead>
+                    <tbody id="timingRecords"></tbody>
+                </table>
+            </div>
+            <div class="pagination-row">
+                <button type="button" class="btn btn-outline" id="timingPrev">上一页</button>
+                <span id="timingPageInfo"></span>
+                <button type="button" class="btn btn-outline" id="timingNext">下一页</button>
+            </div>
+        </div>
+    </section>
+
+    <!-- ═══ 图表区 ═══ -->
+    <div class="section">
+        <div class="chart-box" style="margin-bottom:16px;">
+            <h4>每日问答趋势（近筛选区间）</h4>
+            <div class="chart chart-tall" id="trendChart"></div>
+        </div>
+        <div class="chart-grid">
+            <div class="chart-box">
+                <h4>患者关注主题 TOP10</h4>
+                <div class="chart" id="topicChart"></div>
+            </div>
+            <div class="chart-box">
+                <h4>高频关键词 TOP10</h4>
+                <div class="chart" id="keywordChart"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ═══ 高频问题 ═══ -->
+    <div class="section">
+        <div class="section-header"><h2>🔥 高频问题 TOP15</h2></div>
+        <div id="topQuestionsWrap"><div class="empty-state">加载中…</div></div>
+    </div>
+
+    <!-- ═══ 问答明细 ═══ -->
+    <div class="section">
+        <div class="section-header">
+            <h2>📋 问答明细</h2>
+            <span class="hint" id="recordMeta"></span>
+        </div>
+        <div id="recordsWrap"><div class="empty-state">加载中…</div></div>
+        <div class="pagination-row">
+            <button class="btn btn-outline" id="prevPageBtn">上一页</button>
+            <span id="pageInfo">—</span>
+            <button class="btn btn-outline" id="nextPageBtn">下一页</button>
+        </div>
+    </div>
+</div>
+
+<!-- ═══ 问答详情模态 ═══ -->
+<div class="detail-modal" id="detailModal">
+    <div class="detail-content">
+        <div class="section-header"><h3 id="detailTitle">问答详情</h3><button class="btn btn-outline" onclick="document.getElementById('detailModal').classList.remove('open')">关闭</button></div>
+        <div id="detailMeta" class="hint"></div>
+        <div class="qa-block q" id="detailQuestion"></div>
+        <div class="qa-block a" id="detailAnswer"></div>
+        <div class="qa-block" id="detailThinking" style="background:#f9fafb;"></div>
+    </div>
+</div>
+
+<script src="{% static 'promotions/js/echarts.min.js' %}"></script>
+<script src="{% static 'promotions/js/marked.min.js' %}"></script>
+<script src="{% static 'promotions/js/purify.min.js' %}"></script>
+<script>
+    // ── 常量 ──
+    var C = { c1:'#2a78d6', c2:'#eb6834', c3:'#1baf7a', c4:'#eda100', c5:'#e87ba4', c6:'#008300', c7:'#4a3aa7', gray:'#9ca3af' };
+    var TOPIC_COLORS = {
+        '手术与DBS': C.c1, '用药与副作用': C.c2, '癫痫发作与急救': C.c3,
+        '出院与随访': C.c4, '康复与锻炼': C.c5, '饮食与营养': C.c6, '跌倒与安全': C.c7
+    };
+    var PROVIDER_DEFAULTS = {
+        ollama: 'http://127.0.0.1:11434',
+        openai: 'https://api.openai.com/v1',
+        deepseek: 'https://api.deepseek.com/v1',
+        custom_openai: ''
+    };
+
+    function getCookie(name) {
+        var m = document.cookie.match('(^|;)\\s*' + name + '\\s*=\\s*([^;]+)');
+        return m ? decodeURIComponent(m.pop()) : '';
+    }
+    function postJSON(url, body) {
+        return fetch(url, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCookie('csrftoken')
+            },
+            body: JSON.stringify(body || {})
+        }).then(function (r) { return r.json(); });
+    }
+
+    // ── 状态 ──
+    var page = 1, pageSize = 20, totalPages = 1;
+    var charts = {};
+
+    function currentFilters() {
+        return {
+            start: document.getElementById('fStart').value,
+            end: document.getElementById('fEnd').value,
+            patient_id: document.getElementById('fPatient').value,
+            disease: document.getElementById('fDisease').value,
+            topic: document.getElementById('fTopic').value,
+            q: document.getElementById('fQ').value.trim()
+        };
+    }
+    function buildQuery(extraPage) {
+        var f = currentFilters();
+        var params = new URLSearchParams({
+            start: f.start, end: f.end, patient_id: f.patient_id,
+            disease: f.disease, topic: f.topic, q: f.q,
+            page: extraPage || page, page_size: pageSize
+        });
+        return '?' + params.toString();
+    }
+
+    // ── 图表初始化 ──
+    charts.trend = echarts.init(document.getElementById('trendChart'));
+    charts.topic = echarts.init(document.getElementById('topicChart'));
+    charts.keyword = echarts.init(document.getElementById('keywordChart'));
+
+    var ECHART_COMMON = {
+        textStyle: { fontFamily: 'Arial,"Microsoft YaHei",sans-serif', fontSize: 12 },
+        grid: { left: 48, right: 20, top: 40, bottom: 30 },
+        tooltip: { trigger: 'item' }
+    };
+
+    function renderCharts(data) {
+        // 趋势折线：全部 + 关联患者 两个系列
+        charts.trend.setOption({
+            color: [C.c1, C.c2],
+            textStyle: ECHART_COMMON.textStyle,
+            tooltip: { trigger: 'axis', axisPointer: { type: 'cross' } },
+            legend: { data: ['全部问答', '关联患者问答'], top: 0 },
+            grid: { left: 48, right: 20, top: 40, bottom: 30 },
+            xAxis: {
+                type: 'category', boundaryGap: false,
+                data: data.trend.map(function (d) { return d.date.slice(5); }),
+                axisLine: { lineStyle: { color: '#d9e0ea' } },
+                axisLabel: { color: '#6b7280' }
+            },
+            yAxis: {
+                type: 'value', minInterval: 1,
+                splitLine: { lineStyle: { color: '#eef1f5' } },
+                axisLabel: { color: '#6b7280' }
+            },
+            series: [
+                { name: '全部问答', type: 'line', smooth: true, showSymbol: false,
+                  lineStyle: { width: 2 },
+                  data: data.trend.map(function (d) { return d.count; }) },
+                { name: '关联患者问答', type: 'line', smooth: true, showSymbol: false,
+                  lineStyle: { width: 2 },
+                  data: data.trend.map(function (d) { return d.patient_count; }) }
+            ]
+        }, { notMerge: true });
+
+        // 主题条形图：颜色跟随主题（固定映射），不随排名跳动
+        var topicNames = data.topics.map(function (t) { return t.name; });
+        var topicCounts = data.topics.map(function (t) { return t.count; });
+        var topicColors = data.topics.map(function (t) { return TOPIC_COLORS[t.name] || C.gray; });
+        charts.topic.setOption({
+            textStyle: ECHART_COMMON.textStyle,
+            tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+            grid: { left: 110, right: 30, top: 10, bottom: 30 },
+            xAxis: { type: 'value', minInterval: 1, splitLine: { lineStyle: { color: '#eef1f5' } }, axisLabel: { color: '#6b7280' } },
+            yAxis: { type: 'category', data: topicNames.slice().reverse(), axisLine: { lineStyle: { color: '#d9e0ea' } }, axisLabel: { color: '#4b5563' } },
+            series: [{
+                type: 'bar', data: topicCounts.slice().reverse().map(function (v, i) {
+                    return { value: v, itemStyle: { color: topicColors.slice().reverse()[i], borderRadius: 2 } };
+                }), barWidth: '55%'
+            }]
+        }, { notMerge: true });
+
+        // 关键词条形图：单色（身份由标签承载）
+        charts.keyword.setOption({
+            textStyle: ECHART_COMMON.textStyle,
+            tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+            grid: { left: 110, right: 30, top: 10, bottom: 30 },
+            xAxis: { type: 'value', minInterval: 1, splitLine: { lineStyle: { color: '#eef1f5' } }, axisLabel: { color: '#6b7280' } },
+            yAxis: { type: 'category', data: data.keywords.map(function (k) { return k.name; }).reverse(), axisLine: { lineStyle: { color: '#d9e0ea' } }, axisLabel: { color: '#4b5563' } },
+            series: [{
+                type: 'bar', data: data.keywords.map(function (k) { return k.count; }).reverse(),
+                itemStyle: { color: C.c1, borderRadius: 2 }, barWidth: '55%'
+            }]
+        }, { notMerge: true });
+    }
+
+    function renderTiles(tiles) {
+        document.getElementById('tileTotal').textContent = tiles.total;
+        document.getElementById('tileToday').textContent = tiles.today;
+        document.getElementById('tilePatientLinked').textContent = tiles.patient_linked;
+        document.getElementById('tileAvgLatency').textContent = (tiles.avg_latency_ms == null ? '—' : (tiles.avg_latency_ms / 1000).toFixed(1) + 's');
+    }
+
+    var STATUS_LABEL = { pending:'待提取', processing:'提取中', done:'已完成', error:'失败' };
+    var STATUS_CLASS = { pending:'status-pending', processing:'status-processing', done:'status-done', error:'status-error' };
+
+    function renderTopQuestions(items) {
+        var wrap = document.getElementById('topQuestionsWrap');
+        if (!items.length) { wrap.innerHTML = '<div class="empty-state">暂无问答记录（当前筛选条件下）</div>'; return; }
+        var html = '<table><thead><tr><th style="width:60px;">排名</th><th>高频问题</th><th style="width:90px;">提问次数</th><th style="width:170px;">最近提问</th></tr></thead><tbody>';
+        items.forEach(function (item, i) {
+            html += '<tr><td>' + (i + 1) + '</td><td>' + escapeHtml(item.question) + '</td><td><strong>' + item.count + '</strong></td><td>' + escapeHtml(item.last_at || '—') + '</td></tr>';
+        });
+        html += '</tbody></table>';
+        wrap.innerHTML = html;
+    }
+
+    var detailCache = {};
+
+    function renderRecords(records) {
+        var wrap = document.getElementById('recordsWrap');
+        if (!records.length) { wrap.innerHTML = '<div class="empty-state">暂无问答记录（当前筛选条件下）</div>'; return; }
+        detailCache = {};
+        var html = '<table><thead><tr><th>时间</th><th>来源</th><th>患者</th><th>模型</th><th>问题</th><th>关键词</th><th>主题</th><th>提取</th><th>操作</th></tr></thead><tbody>';
+        records.forEach(function (r) {
+            detailCache[r.id] = r;
+            html += '<tr><td style="white-space:nowrap;">' + escapeHtml(r.created_at) + '</td>'
+                + '<td>' + (r.source === 'api' ? 'App端' : '网页端') + '</td>'
+                + '<td>' + (r.patient ? (escapeHtml(r.patient.bed_no) + '床 ' + escapeHtml(r.patient.name)) : '—') + '</td>'
+                + '<td style="max-width:140px;word-break:break-all;">' + escapeHtml(r.model_key) + '</td>'
+                + '<td style="max-width:260px;">' + escapeHtml(r.question) + '</td>'
+                + '<td>' + (r.keywords || []).slice(0, 4).map(function (k) { return '<span class="tag">' + escapeHtml(k) + '</span>'; }).join('') + '</td>'
+                + '<td>' + (r.topics || []).slice(0, 3).map(function (t) { return '<span class="tag">' + escapeHtml(t) + '</span>'; }).join('') + '</td>'
+                + '<td><span class="status-pill ' + (STATUS_CLASS[r.extraction_status] || 'status-pending') + '">' + (STATUS_LABEL[r.extraction_status] || r.extraction_status) + '</span></td>'
+                + '<td><button class="btn btn-outline" onclick="openDetail(' + r.id + ')">详情</button></td></tr>';
+        });
+        html += '</tbody></table>';
+        wrap.innerHTML = html;
+    }
+
+    function openDetail(id) {
+        var r = detailCache[id];
+        if (!r) return;
+        document.getElementById('detailTitle').textContent = '问答详情 #' + id;
+        document.getElementById('detailMeta').textContent =
+            r.created_at + ' · ' + (r.source === 'api' ? 'App端' : '网页端') +
+            (r.patient ? (' · 患者：' + r.patient.bed_no + '床 ' + r.patient.name + '（' + r.patient.disease + '）') : '') +
+            ' · 模型：' + r.model_key;
+        document.getElementById('detailQuestion').textContent = r.question;
+        document.getElementById('detailAnswer').textContent = r.answer;
+        document.getElementById('detailThinking').textContent = r.thinking ? ('思考过程：\n' + r.thinking) : '';
+        document.getElementById('detailThinking').style.display = r.thinking ? '' : 'none';
+        document.getElementById('detailModal').classList.add('open');
+    }
+
+    function loadData() {
+        fetch('{% url "analytics_data" %}' + buildQuery())
+            .then(function (r) { return r.json(); })
+            .then(function (resp) {
+                if (!resp.ok) { alert(resp.error || '加载失败'); return; }
+                var data = resp.data;
+                renderTiles(data.tiles);
+                renderCharts(data);
+                renderTopQuestions(data.top_questions);
+                renderRecords(data.records);
+                var pg = data.pagination;
+                totalPages = Math.max(1, Math.ceil(pg.total / pg.page_size));
+                document.getElementById('pageInfo').textContent = '第 ' + pg.page + ' / ' + totalPages + ' 页（共 ' + pg.total + ' 条）';
+                document.getElementById('recordMeta').textContent = '失败记录（服务端错误）已排除，当前筛选内失败 ' + data.tiles.failed_count + ' 条';
+                document.getElementById('prevPageBtn').disabled = pg.page <= 1;
+                document.getElementById('nextPageBtn').disabled = pg.page >= totalPages;
+            })
+            .catch(function (e) { alert('加载数据失败：' + e); });
+    }
+
+    function escapeHtml(s) {
+        return String(s == null ? '' : s)
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    }
+
+    // ── 筛选与分页 ──
+    document.getElementById('refreshBtn').addEventListener('click', function () { page = 1; loadData(); });
+    document.getElementById('fQ').addEventListener('keydown', function (e) { if (e.key === 'Enter') { page = 1; loadData(); } });
+    document.getElementById('prevPageBtn').addEventListener('click', function () { if (page > 1) { page--; loadData(); } });
+    document.getElementById('nextPageBtn').addEventListener('click', function () { if (page < totalPages) { page++; loadData(); } });
+    window.addEventListener('resize', function () { Object.values(charts).forEach(function (c) { c.resize(); }); });
+
+    // ── AI 配置 ──
+    document.getElementById('aiProvider').addEventListener('change', function () {
+        var p = this.value;
+        document.getElementById('aiBaseUrl').placeholder = PROVIDER_DEFAULTS[p] || '';
+        document.getElementById('aiKeyField').style.display = (p === 'ollama') ? 'none' : '';
+    });
+    document.getElementById('aiProvider').dispatchEvent(new Event('change'));
+
+    function setConfigStatus(msg, ok) {
+        var el = document.getElementById('aiConfigStatus');
+        el.textContent = msg || '';
+        el.className = 'ai-status ' + (ok ? 'ok' : 'err');
+    }
+
+    document.getElementById('fetchModelsBtn').addEventListener('click', function () {
+        var btn = this;
+        btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>获取中…';
+        setConfigStatus('', true);
+        postJSON('{% url "ai_fetch_models" %}', {
+            provider_type: document.getElementById('aiProvider').value,
+            base_url: document.getElementById('aiBaseUrl').value.trim(),
+            api_key: document.getElementById('aiKey').value.trim()
+        }).then(function (resp) {
+            btn.disabled = false; btn.textContent = '获取模型';
+            if (!resp.ok) { setConfigStatus('获取模型失败：' + resp.error + '（可手动填写模型名后直接保存）', false); return; }
+            var sel = document.getElementById('aiModel');
+            sel.innerHTML = '<option value="">请选择模型</option>';
+            (resp.models || []).forEach(function (m) {
+                var opt = document.createElement('option');
+                opt.value = m; opt.textContent = m;
+                sel.appendChild(opt);
+            });
+            setConfigStatus('已获取 ' + (resp.models || []).length + ' 个模型，请选择后保存。', true);
+        }).catch(function (e) { btn.disabled = false; btn.textContent = '获取模型'; setConfigStatus('请求失败：' + e, false); });
+    });
+
+    document.getElementById('saveConfigBtn').addEventListener('click', function () {
+        var btn = this;
+        var model = document.getElementById('aiModel').value || document.getElementById('aiModelManual').value.trim();
+        var baseUrl = document.getElementById('aiBaseUrl').value.trim();
+        btn.disabled = true;
+        postJSON('{% url "ai_save_config" %}', {
+            provider_type: document.getElementById('aiProvider').value,
+            base_url: baseUrl,
+            api_key: document.getElementById('aiKey').value.trim(),
+            model: model
+        }).then(function (resp) {
+            btn.disabled = false;
+            if (!resp.ok) { setConfigStatus('保存失败：' + resp.error, false); return; }
+            setConfigStatus('✅ 配置已保存并生效。', true);
+            document.getElementById('insightBtn').disabled = false;
+            location.reload();
+        }).catch(function (e) { btn.disabled = false; setConfigStatus('请求失败：' + e, false); });
+    });
+
+    // ── 提取未处理 ──
+    document.getElementById('extractBtn').addEventListener('click', function () {
+        var btn = this;
+        var n = parseInt(document.getElementById('pendingCount').textContent, 10) || 0;
+        if (n <= 0) { setConfigStatus('当前没有待提取的记录。', true); return; }
+        if (!confirm('将对最多 30 条待提取记录执行关键词/主题提取（AI 未配置时使用本地分词兜底），继续？')) return;
+        btn.disabled = true; btn.textContent = '提取中…（请勿关闭页面）';
+        postJSON('{% url "analytics_extract" %}', {}).then(function (resp) {
+            btn.disabled = false;
+            if (!resp.ok) { alert(resp.error || '提取失败'); return; }
+            var aiCount = (resp.results || []).filter(function (r) { return r.method === 'ai'; }).length;
+            setConfigStatus('✅ 本次处理 ' + resp.done + ' 条（AI 提取 ' + aiCount + ' 条，本地兜底 ' + (resp.done - aiCount) + ' 条），失败 ' + resp.failed + ' 条，剩余 ' + resp.remaining + ' 条。', true);
+            document.getElementById('pendingCount').textContent = resp.remaining;
+            btn.textContent = '🔧 提取未处理关键词/主题（' + resp.remaining + ' 条待提取）';
+            loadData();
+        }).catch(function (e) { btn.disabled = false; btn.textContent = '🔧 提取未处理关键词/主题'; alert('提取请求失败：' + e); });
+    });
+
+    // ── AI 洞察 ──
+    document.getElementById('insightBtn').addEventListener('click', function () {
+        var btn = this;
+        var hint = document.getElementById('insightHint');
+        var out = document.getElementById('insightOutput');
+        btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>分析中…（约 10-60 秒）';
+        out.classList.remove('show');
+        postJSON('{% url "analytics_insight" %}', currentFilters()).then(function (resp) {
+            btn.disabled = false; btn.textContent = '生成 AI 洞察简报';
+            if (!resp.ok) { hint.textContent = '生成失败：' + resp.error; hint.style.display = ''; return; }
+            hint.textContent = '模型：' + resp.model + ' · 耗时 ' + (resp.elapsed_ms / 1000).toFixed(1) + 's';
+            hint.style.display = '';
+            out.innerHTML = DOMPurify.sanitize(marked.parse(resp.text || ''));
+            out.classList.add('show');
+        }).catch(function (e) {
+            btn.disabled = false; btn.textContent = '生成 AI 洞察简报';
+            hint.textContent = '请求失败：' + e; hint.style.display = '';
+        });
+    });
+
+    // ── 初始加载 ──
+    loadData();
+</script>
+<script>
+    (() => {
+        const el = id => document.getElementById(id);
+        const dataUrl = '{% url "qa_timing_analytics" %}';
+        const exportUrl = '{% url "qa_timing_export" %}';
+        const metrics = [
+            ['client_total_ms', '完整回答等待'],
+            ['client_first_ms', '首字等待'],
+            ['backend_ms', '后台处理']
+        ];
+        const lines = [
+            ['client_median', '完整回答等待中位数'],
+            ['client_p95', '完整回答等待 P95'],
+            ['backend_median', '后台处理中位数']
+        ];
+        let requestVersion = 0;
+        let appliedFilters = null;
+        let page = 1;
+        let chart = null;
+
+        const duration = value => value == null ? '—' : `${(value / 1000).toFixed(2)} 秒`;
+
+        function fillRows(id, rows) {
+            const body = el(id);
+            body.replaceChildren();
+            for (const values of rows) {
+                const row = body.insertRow();
+                for (const value of values) {
+                    row.insertCell().textContent = value;
+                }
+                if (id === 'timingRecords') row.cells[0].className = 'timing-id';
+            }
+        }
+
+        function renderTrend(trend) {
+            const box = el('timingChartBox');
+            const hasPoints = trend.some(day => lines.some(([key]) => day[key] != null));
+            box.hidden = !hasPoints || !window.echarts;
+            if (box.hidden) return;
+            if (!chart) chart = window.echarts.init(el('timingChart'));
+            chart.resize();
+            chart.setOption({
+                color: ['#2a78d6', '#eb6834', '#1baf7a'],
+                tooltip: {trigger: 'axis'},
+                legend: {type: 'scroll', top: 0},
+                grid: {left: 55, right: 20, top: 42, bottom: 30},
+                xAxis: {type: 'category', data: trend.map(day => day.date)},
+                yAxis: {type: 'value', min: 0},
+                series: lines.map(([key, name]) => ({
+                    name, type: 'line', symbolSize: 5, connectNulls: false,
+                    data: trend.map(day => day[key] == null ? null : day[key] / 1000)
+                }))
+            }, {notMerge: true});
+        }
+
+        function render(data, filters) {
+            const select = el('timingModel');
+            const models = [...data.models];
+            if (filters.model && !models.includes(filters.model)) models.unshift(filters.model);
+            select.replaceChildren(new Option('全部模型', ''), ...models.map(model => new Option(model, model)));
+            select.value = filters.model;
+
+            el('timingResults').hidden = !data.total;
+            el('timingExport').hidden = !data.total;
+            el('timingStatus').textContent = data.total ? '' : '所选范围暂无计时记录。';
+            if (!data.total) return;
+
+            const counts = data.counts;
+            const rate = data.failure_rate == null ? '—' : `${(data.failure_rate * 100).toFixed(1)}%`;
+            el('timingCounts').textContent = `共 ${data.total} 次 · 成功 ${counts.success || 0} · 失败 ${counts.failed || 0} · 超时 ${counts.timeout || 0} · 取消 ${counts.cancelled || 0} · 中断 ${counts.interrupted || 0} · 处理中 ${counts.pending || 0} · 失败率 ${rate}`;
+            fillRows('timingMetrics', metrics.map(([key, label]) => {
+                const metric = data.metrics[key];
+                return [label, metric.count, duration(metric.average), duration(metric.median), duration(metric.p95)];
+            }));
+            fillRows('timingRecords', data.records.map(row => [
+                row.request_id, row.started_at, row.source === 'api' ? 'App 端' : '网页端', row.timing_model || '—', row.status_label,
+                duration(row.client_first_ms), duration(row.client_total_ms),
+                duration(row.first_answer_ms), duration(row.backend_ms)
+            ]));
+            page = data.page;
+            el('timingPageInfo').textContent = `第 ${page} / ${data.page_count} 页`;
+            el('timingPrev').disabled = page <= 1;
+            el('timingNext').disabled = page >= data.page_count;
+            el('timingExport').href = `${exportUrl}?${new URLSearchParams(filters)}`;
+            renderTrend(data.trend);
+        }
+
+        async function load(filters, requestedPage) {
+            const version = ++requestVersion;
+            el('timingStatus').textContent = '正在加载计时记录…';
+            try {
+                const params = new URLSearchParams({...filters, page: requestedPage});
+                const response = await fetch(`${dataUrl}?${params}`);
+                const payload = await response.json();
+                if (version !== requestVersion) return;
+                if (!response.ok || !payload.ok) throw new Error(payload.error || '加载失败');
+                appliedFilters = filters;
+                render(payload.data, filters);
+            } catch (error) {
+                if (version !== requestVersion) return;
+                el('timingStatus').textContent = `计时记录加载失败。${error.message}`;
+            }
+        }
+
+        function apply() {
+            load({start: el('timingStart').value, end: el('timingEnd').value, model: el('timingModel').value, source: el('timingSource').value}, 1);
+        }
+        el('timingFilter').addEventListener('submit', event => { event.preventDefault(); apply(); });
+        el('timingPrev').addEventListener('click', () => load(appliedFilters, page - 1));
+        el('timingNext').addEventListener('click', () => load(appliedFilters, page + 1));
+        window.addEventListener('resize', () => { if (chart && !el('timingChartBox').hidden) chart.resize(); });
+        apply();
+    })();
+</script>
+</body>
+</html>

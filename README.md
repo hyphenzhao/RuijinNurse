@@ -83,6 +83,32 @@
 
 ---
 
+### 2.1 二期升级（2026-09）：问答数据分析 · 患者管理 · 多模型 AI 分析
+
+- 🛏 **患者管理（CRUD）**
+  - 床号、姓名、性别、出生日期、疾病种类（帕金森/癫痫/肌张力障碍/情感障碍/精神分裂症等）、入院时间、多条计划手术时间、预计在院天数范围、注意事项、备注
+  - 量表字段已预留（`scales` JSONField，当前为空，后续支持 UPDRS/MMSE/NPI 等）
+  - 归档（软删除）不破坏历史问答关联；列表仅显示关键列
+
+- 📊 **问答数据库与数据分析看板**
+  - 网页端 / App 端每次问答自动落库（`QARecord`：问题、回答、思考过程、模型、用户、关联患者、耗时、错误信息）
+  - 高频问题 TOP15、每日趋势折线（全部/关联患者双系列）、主题 TOP10、关键词 TOP10、指标磁贴、明细表（分页 + 详情）
+  - 手动批量提取关键词/主题：AI 优先（需先配置 AI），未配置或失败时自动用 jieba + 医学领域词典兜底
+  - **注意**：会话上下文记忆仍由 `runtime_sessions/` JSON 文件承担（App 兼容），`QARecord` 为自二期上线起的统计审计数据（不含存量回填）
+
+- 🤖 **AI 驱动配置（数据分析页顶部）**
+  - 兼容 Ollama、OpenAI、DeepSeek 及 OpenAI 兼容接口：填写 API 地址 → 获取模型 → 选择模型 → 保存
+  - 支持「AI 洞察简报」：基于当前筛选统计生成护理数据分析简报
+  - 聊天对话管线保持不变（仅 Ollama 智能体/单模型），多提供商配置仅用于数据分析
+
+- 🧑‍🤝‍🧑 **聊天页左侧患者抽屉**
+  - 打开抽屉 → 选择患者建立关联 → 患者信息（床号、诊断、手术计划、注意事项等）随提问注入 AI 上下文
+  - 该患者的问答自动关联患者 ID，可在数据分析页按患者过滤
+
+- 🔐 **安全说明**：AIConfig 的 API Key 为明文存储（内网本地部署假设），页面以 password 型输入且不回显；请勿将 key 写入日志或会话文件。数据分析明细对患者姓名脱敏（`张*`）。
+
+---
+
 ## 3️⃣ 系统架构概览
 
 当前仓库主要包含两大部分：
@@ -333,7 +359,9 @@ cd RuijinNurse
 
 当前项目使用 `Django TestCase` 编写测试。测试文件位于：
 
-- `mysite/promotions/tests.py`
+- `mysite/promotions/tests/`（二期起为测试包：患者管理、问答落库、提取、数据分析、聊天患者上下文等）
+- `mysite/promotions/tests/test_speech_integration.py`（语音集成测试，`@tag('integration')`，依赖外部语音服务）
+- `mysite/api/tests.py`（App API 契约冒烟测试）
 
 #### 4.5.1 运行全部 Django 测试
 
@@ -343,16 +371,18 @@ cd RuijinNurse
 python manage.py test
 ```
 
-#### 4.5.2 仅运行 `promotions` app 的测试
+> 语音集成测试需要 Whisper / Piper 服务在线；服务不在线时语音测试会失败（不影响其他测试）。
+
+#### 4.5.2 运行验收测试（不含语音集成，可离线确定性通过）
 
 ```bash
-python manage.py test promotions
+python manage.py test promotions.tests api.tests --exclude-tag integration
 ```
 
 #### 4.5.3 仅运行语音相关测试
 
 ```bash
-python manage.py test promotions.tests.SpeechServiceIntegrationTests
+python manage.py test promotions.tests.test_speech_integration
 ```
 
 #### 4.5.4 当前语音测试覆盖内容
@@ -443,18 +473,31 @@ RuijinNurse/
 ├─ mysite/                    # Django 后端项目目录
 │  ├─ manage.py
 │  ├─ mysite/                 # Django project settings / urls
+│  ├─ api/                    # 移动端 REST API（DRF + JWT）
+│  │  ├─ views.py             # 登录/聊天流/智能体/会话/健康检查
+│  │  ├─ serializers.py       # 含 ChatRequestSerializer（可选 patient_id）
+│  │  └─ tests.py             # API 契约冒烟测试
 │  └─ promotions/             # 当前主要业务 app
-│     ├─ models.py            # Agent、KnowledgeDocument
-│     ├─ views.py             # 宣讲对话、流式接口、系统管理页
+│     ├─ models.py            # Agent、KnowledgeDocument、Patient、SurgeryPlan、QARecord、AIConfig
+│     ├─ views.py             # 宣讲对话、流式接口、系统管理页、患者管理、数据分析
+│     ├─ ai_client.py         # 多提供商 AI 客户端（Ollama/OpenAI/DeepSeek/兼容接口）
+│     ├─ qa_store.py          # 问答落库、关键词/主题提取、领域词典、患者上下文
 │     ├─ forms.py             # 智能体与对话表单
 │     ├─ middleware.py        # 登录保护中间件
 │     ├─ templates/
-│     ├─ static/
-│     └─ migrations/
+│     │  ├─ promotion.html    # 宣讲页（含左侧患者抽屉）
+│     │  ├─ setup.html        # 系统管理
+│     │  ├─ patients.html     # 患者管理
+│     │  ├─ analytics.html    # 数据分析（ECharts 本地化）
+│     │  └─ _admin_nav.html   # 管理区共享顶部导航
+│     ├─ static/              # 含 echarts.min.js（本地 vendored）
+│     ├─ tests/               # 单元测试包（语音集成测试在此，@tag integration）
+│     └─ migrations/          # 0007 为二期新增（Patient/SurgeryPlan/QARecord/AIConfig）
 ├─ Unity/            # Unity 客户端工程目录
 │  ├─ Assets/
 │  ├─ ProjectSettings/
 │  └─ ...
+├─ docs/             # 阶段更新报告
 ├─ .gitignore
 └─ README.md         # 本文件
 ```
@@ -497,10 +540,26 @@ Django 后端目前已经对外提供统一的宣讲 / 问答接口，内部根�
   - 流式问答接口
   - 使用 `StreamingHttpResponse` 返回 SSE 风格事件
 - `/promotion/setup/`
-  - 系统管理页面
+  - 系统管理页面（顶部含 系统管理 / 数据分析 / 患者管理 导航）
   - 管理默认模型配置、智能体配置、知识文本与知识文档导入
 - `/promotion/setup/ollama-models/`
   - 根据给定主机 / 端口查询 Ollama 模型列表
+- `/promotion/patients/`
+  - 患者管理页（CRUD：新增/编辑/归档/恢复，多手术时间，疾病筛选）
+- `/promotion/patient/select/`
+  - 聊天页左抽屉的患者关联接口（写入/清除会话级当前患者）
+- `/promotion/analytics/`
+  - 数据分析页：AI 驱动配置、AI 洞察简报、指标磁贴、趋势/主题/关键词图表、高频问题、明细表
+- `/promotion/analytics/data/`
+  - 统计聚合 JSON（支持 start/end/patient_id/disease/topic/q/page 参数）
+- `/promotion/analytics/extract/`
+  - 手动批量提取关键词/主题（每次最多 30 条）
+- `/promotion/analytics/insight/`
+  - AI 洞察简报（使用当前筛选条件）
+- `/promotion/analytics/ai/fetch-models/` 与 `/promotion/analytics/ai/save-config/`
+  - AI 驱动配置：获取模型列表 / 保存配置（单活跃策略）
+- `/api/v1/chat/stream/`
+  - 请求体新增可选 `patient_id` 字段（旧 App 不传行为不变；传了则问答关联患者并注入患者上下文）
 - `/accounts/login/` 与 `/accounts/logout/`
   - Django 内置认证入口
 

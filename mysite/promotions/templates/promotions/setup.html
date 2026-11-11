@@ -58,6 +58,7 @@
 </head>
 <body>
 <div class="page">
+    {% include 'promotions/_admin_nav.html' %}
     <div class="page-header">
         <div><h1>系统管理</h1><p class="hint">管理 Ollama 智能体配置、知识图谱与参考知识。</p></div>
         <a class="back-link" href="{% url 'promotion' %}">← 返回宣讲页面</a>
@@ -235,7 +236,7 @@
             <div class="button-row" style="align-items:flex-end;">
                 <p style="flex:1;margin:0;"><label>Ollama 主机</label><input type="text" name="kg_host" id="kg_create_host_emb" value="127.0.0.1" required></p>
                 <p style="width:160px;margin:0;"><label>端口</label><input type="number" name="kg_port" id="kg_create_port_emb" value="11434" required></p>
-                <button class="btn btn-secondary" type="button" id="fetchKgCreateModelsBtn">获取 Embedding</button>
+                <button class="btn btn-secondary" type="button" id="fetchKgCreateEmbModelsBtn">获取 Embedding</button>
             </div>
             <p id="kgCreateFetchStatus" class="hint">请先点击"获取 Embedding"拉取可用模型。</p>
             <p><label>Embedding 模型</label><select name="kg_embedding_model" id="kg_create_emb_model" disabled required></select></p>
@@ -689,7 +690,7 @@ function getCookie(name){const v=(`; ${document.cookie}`).split(`; ${name}=`);if
     const kgCreateEmbFetcher=makeModelFetcher(
         document.getElementById('kg_create_host_emb'),document.getElementById('kg_create_port_emb'),
         document.getElementById('kg_create_emb_model'),null,null,null,
-        document.getElementById('saveKgCreateBtn'),document.getElementById('fetchKgCreateModelsBtn'),
+        document.getElementById('saveKgCreateBtn'),document.getElementById('fetchKgCreateEmbModelsBtn'),
         document.getElementById('kgCreateFetchStatus')
     );
     const kgCreateBdKg=document.getElementById('kgCreateBackdrop');

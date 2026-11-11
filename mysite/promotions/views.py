@@ -1,18 +1,30 @@
 from pathlib import Path
 import json
 import re
-from datetime import datetime
+import time
+from datetime import datetime, timedelta
 
 import requests
 from django.http import JsonResponse, StreamingHttpResponse
 from django.shortcuts import get_object_or_404, render
+from django.utils import timezone
 from django.views.decorators.csrf import ensure_csrf_cookie
 
+from .ai_client import AIClientError, chat_complete_text, fetch_models, get_active_config
 from .forms import AgentForm, KnowledgeGraphAgentForm, PromotionForm
 from .models import (
     Agent, KnowledgeDocument, KnowledgeGraph,
     ReferenceCard, KnowledgeEntry, LiteratureEntry,
+    Patient, SurgeryPlan, QARecord, AIConfig,
+    DISEASE_TYPE_CHOICES,
 )
+from .qa_store import (
+    TOPIC_WHITELIST,
+    extract_record,
+    format_patient_context,
+    log_qa_record,
+)
+from .qa_timing import QATimer, TimedStream, cancel_timing, failure_status, ollama_request_timeout
 from .view_helper import (
     ai_extract_knowledge,
     ai_extract_knowledge_batch,
@@ -89,7 +101,7 @@ def _stream_ollama_response_by_target(base_url: str, model_name: str, messages):
         'think': True,
         'stream': True,
     }
-    return requests.post(f'{base_url}/api/chat', json=payload, stream=True)
+    return requests.post(f'{base_url}/api/chat', json=payload, stream=True, timeout=ollama_request_timeout())
 
 
 def _stream_ollama_response(model_key: str, role_text: str, knowledge_text: str, promotion: str):
@@ -166,10 +178,13 @@ def _get_chat_target(model_key: str):
     }
 
 
-def _append_chat_history(request, promotion: str, response_text: str):
-    chat_history = request.session.get('chat_history', [])
+def _append_chat_history(request, promotion: str, response_text: str, model_key='default'):
+    scope = f'{request.session.get("current_patient_id") or "none"}:{model_key}'
+    histories = request.session.get('chat_history_scopes', {})
+    chat_history = histories.get(scope, [])
     chat_history.append({'user': promotion, 'response': response_text})
-    request.session['chat_history'] = chat_history
+    histories[scope] = chat_history
+    request.session['chat_history_scopes'] = histories
     return chat_history
 
 
@@ -247,6 +262,28 @@ def _ensure_request_session_key(request) -> str:
     return request.session.session_key
 
 
+def _get_session_patient(request):
+    """患者抽屉中当前关联的患者（存在且未归档时返回，否则 None）"""
+    patient_id = request.session.get('current_patient_id')
+    if not patient_id:
+        return None
+    patient = Patient.objects.filter(id=patient_id, is_active=True).first()
+    if patient is None:
+        request.session.pop('current_patient_id', None)
+    return patient
+
+
+def _append_patient_context(request, knowledge_text: str) -> str:
+    """把当前关联患者的信息块拼入参考知识，供聊天 AI 参考"""
+    patient = _get_session_patient(request)
+    if patient is None:
+        return knowledge_text
+    patient_block = format_patient_context(patient)
+    if not patient_block:
+        return knowledge_text
+    return f'{(knowledge_text or "").rstrip()}\n\n{patient_block}'
+
+
 def _safe_model_key(model_key: str) -> str:
     return re.sub(r'[^A-Za-z0-9._-]+', '_', model_key or 'default')
 
@@ -254,7 +291,26 @@ def _safe_model_key(model_key: str) -> str:
 def _get_session_context_path(request, model_key: str) -> Path:
     session_key = _ensure_request_session_key(request)
     RUNTIME_SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
-    return RUNTIME_SESSIONS_DIR / f'{session_key}__{_safe_model_key(model_key)}.json'
+    # Legacy files may contain multiple patients. Preserve them for audit, but do
+    # not silently import their mixed context into a new patient's conversation.
+    patient_id = request.session.get('current_patient_id') or 'none'
+    return RUNTIME_SESSIONS_DIR / f'{session_key}__{_safe_model_key(model_key)}__patient_{patient_id}.json'
+
+
+def _selected_patient_history(request, model_key):
+    if not isinstance(model_key, str) or not model_key or len(model_key) > 150:
+        return []
+    path = _get_session_context_path(request, model_key)
+    data = _load_session_context(path, '', model_key)
+    history = []
+    question = None
+    for message in data.get('messages', []):
+        if message.get('role') == 'user':
+            question = message.get('content')
+        elif message.get('role') == 'assistant' and question:
+            history.append({'user': question, 'response': message.get('content', '')})
+            question = None
+    return history
 
 
 def _load_session_context(path: Path, system_context: str, model_key: str):
@@ -343,6 +399,7 @@ def readme_help_view(request):
 def promotion_stop_view(request):
     if request.method != 'POST':
         return JsonResponse({'ok': False, 'error': 'POST only'}, status=405)
+    cancel_timing(request)
     return JsonResponse({'ok': True})
 
 
@@ -879,6 +936,7 @@ def setup_view(request):
             lit_entries_by_kg[kg.id] = kg.literature.filter(is_active=True)
 
     return render(request, 'promotions/setup.html', {
+        'active_tab': 'setup',
         'role_text': role_text,
         'knowledge_text': knowledge_text,
         'agent_form': agent_form,
@@ -906,65 +964,107 @@ def promotion_view(request):
     chat_history = []
 
     if request.method == 'POST' and is_ajax:
+        started_ns = time.perf_counter_ns()
+        started_at = timezone.now()
         agents = Agent.objects.filter(is_active=True).order_by('name')
         model_choices = _get_runtime_model_choices()
         form = PromotionForm(request.POST, agent_choices=agents, model_choices=model_choices)
         if not form.is_valid():
             return JsonResponse({'error': form.errors}, status=400)
 
-        base_path = _get_base_path()
-        default_role_text, default_knowledge_text = load_role_and_knowledge(base_path)
-        promotion = form.cleaned_data['promotion_text']
-        model = form.cleaned_data['model_select']
-
+        timer = QATimer(request, form.cleaned_data['model_select'], started_ns, started_at)
         try:
-            chat_target = _get_chat_target(model)
-            role_text = chat_target['role_text'] if chat_target['role_text'] is not None else default_role_text
-            knowledge_text = chat_target['knowledge_text'] if chat_target['knowledge_text'] is not None else default_knowledge_text
-            system_context = _build_system_context(role_text, knowledge_text)
-            session_path = _get_session_context_path(request, model)
-            session_data = _load_session_context(session_path, system_context, model)
-            session_data['system_context'] = system_context
+            base_path = _get_base_path()
+            default_role_text, default_knowledge_text = load_role_and_knowledge(base_path)
+            promotion = form.cleaned_data['promotion_text']
+            model = form.cleaned_data['model_select']
+            patient = _get_session_patient(request)
+            error_text = ''
+            result = 'success'
 
-            response_text = ''
-            with _stream_ollama_response_by_target(
-                chat_target['base_url'],
-                chat_target['model_name'],
-                _build_messages(system_context, _history_messages_for_ollama(session_data), promotion),
-            ) as response:
-                response.raise_for_status()
-                for line in response.iter_lines(decode_unicode=True):
-                    if not line:
-                        continue
-                    try:
-                        data = json.loads(line)
-                    except json.JSONDecodeError:
-                        continue
-                    message = data.get('message', {}) or {}
-                    response_text += message.get('content', '')
-                    if data.get('done', True):
-                        break
-        except Exception as e:
-            response_text = f'（服务端错误）{type(e).__name__}: {e}'
-            session_data = None
-            session_path = None
+            try:
+                chat_target = _get_chat_target(model)
+                timer.model_name = chat_target['model_name']
+                role_text = chat_target['role_text'] if chat_target['role_text'] is not None else default_role_text
+                knowledge_text = chat_target['knowledge_text'] if chat_target['knowledge_text'] is not None else default_knowledge_text
+                knowledge_text = _append_patient_context(request, knowledge_text)
+                system_context = _build_system_context(role_text, knowledge_text)
+                session_path = _get_session_context_path(request, model)
+                session_data = _load_session_context(session_path, system_context, model)
+                session_data['system_context'] = system_context
 
-        if session_data is not None and session_path is not None:
-            _append_session_message(session_data, 'user', promotion)
-            _append_session_message(session_data, 'assistant', response_text)
-            _save_session_context(session_path, session_data)
+                response_text = ''
+                completed = False
+                think_state = {'in_think': False}
+                with timer.track_response(_stream_ollama_response_by_target(
+                    chat_target['base_url'],
+                    chat_target['model_name'],
+                    _build_messages(system_context, _history_messages_for_ollama(session_data), promotion),
+                )) as response:
+                    response.raise_for_status()
+                    for line in response.iter_lines(decode_unicode=True):
+                        if timer.cancelled:
+                            break
+                        if not line:
+                            continue
+                        try:
+                            data = json.loads(line)
+                        except json.JSONDecodeError:
+                            continue
+                        if data.get('error'):
+                            raise RuntimeError('模型服务返回错误')
+                        message = data.get('message', {}) or {}
+                        content = message.get('content', '')
+                        _, answer = _split_thinking_delta(content, think_state)
+                        timer.first_answer(answer)
+                        response_text += answer
+                        if data.get('done') is True:
+                            completed = True
+                            break
+                if timer.cancelled:
+                    result, error_text = 'cancelled', '用户已停止回答'
+                elif not completed:
+                    result, error_text = 'interrupted', '模型连接提前结束'
+                elif timer.first_answer_ms is None:
+                    result, error_text = 'failed', '模型未返回答案'
+            except Exception as e:
+                result = 'cancelled' if timer.cancelled else failure_status(e)
+                response_text = f'（服务端错误）{type(e).__name__}: {e}'
+                error_text = f'{type(e).__name__}: {e}'
+                session_data = None
+                session_path = None
 
-        chat_history = _append_chat_history(request, promotion, response_text)
-        _save_latest_response_text(response_text)
+            if result == 'success' and session_data is not None and session_path is not None:
+                _append_session_message(session_data, 'user', promotion)
+                _append_session_message(session_data, 'assistant', response_text)
+                _save_session_context(session_path, session_data)
 
-        return JsonResponse({'chat_history': chat_history, 'audio_url': None})
+            chat_history = _append_chat_history(request, promotion, response_text, model)
+            if result == 'success':
+                _save_latest_response_text(response_text)
+            # 问答入库（数据分析数据源）
+            record = log_qa_record(
+                request=request, source='web', user=request.user, patient=patient,
+                model_key=model, question=promotion, answer=response_text,
+                latency_ms=timer.elapsed_ms(), error=error_text,
+            )
+
+            timer.finish(result, record)
+            return JsonResponse({'chat_history': chat_history, 'audio_url': None, 'result': result,
+                                 'error': error_text, 'timing_id': str(timer.timing_id) if timer.timing_id else None})
+        finally:
+            timer.finish('failed')
 
     agents = Agent.objects.filter(is_active=True).order_by('name')
     model_choices = _get_runtime_model_choices()
     form = PromotionForm(agent_choices=agents, model_choices=model_choices)
-    if 'chat_history' in request.session:
-        del request.session['chat_history']
-    _clear_request_session_contexts(request)
+
+    # 患者抽屉：在院患者列表 + 当前关联患者
+    patients = Patient.objects.filter(is_active=True).order_by('bed_no', 'name')
+    current_patient = _get_session_patient(request)
+    default_agent = agents.first()
+    default_model = f'agent:{default_agent.slug}' if default_agent else (model_choices[0][0] if model_choices else '')
+    chat_history = _selected_patient_history(request, default_model)
 
     return render(request, 'promotions/promotion.html', {
         'form': form,
@@ -974,6 +1074,8 @@ def promotion_view(request):
         'model_options': model_choices,
         'debug_session_key': _ensure_request_session_key(request),
         'debug_runtime_sessions_dir': str(RUNTIME_SESSIONS_DIR),
+        'patients': patients,
+        'current_patient': current_patient,
     })
 
 
@@ -982,6 +1084,8 @@ def promotion_stream(request):
     if request.method != 'POST':
         return JsonResponse({'error': 'POST only'}, status=405)
 
+    started_ns = time.perf_counter_ns()
+    started_at = timezone.now()
     agents = Agent.objects.filter(is_active=True).order_by('name')
     model_choices = _get_runtime_model_choices()
     form = PromotionForm(request.POST, agent_choices=agents, model_choices=model_choices)
@@ -992,18 +1096,27 @@ def promotion_stream(request):
     default_role_text, default_knowledge_text = load_role_and_knowledge(base_path)
     promotion = form.cleaned_data['promotion_text']
     model = form.cleaned_data['model_select']
+    patient = _get_session_patient(request)
+    timer = QATimer(request, model, started_ns, started_at)
 
     def generate():
-        yield helper_sse('status', {'message': 'thinking'})
-
         full_text = ''
         think_text = ''
         think_state = {'in_think': False}
         session_path = None
         session_data = None
+        error_text = ''
+        result = 'success'
+        completed = False
 
         try:
+            yield helper_sse('status', {
+                'message': 'thinking', 'timing_id': str(timer.timing_id) if timer.timing_id else None,
+            })
+            if timer.cancelled:
+                raise InterruptedError('用户已停止回答')
             chat_target = _get_chat_target(model)
+            timer.model_name = chat_target['model_name']
             role_text = chat_target['role_text'] if chat_target['role_text'] is not None else default_role_text
             knowledge_text = chat_target['knowledge_text'] if chat_target['knowledge_text'] is not None else default_knowledge_text
 
@@ -1018,18 +1131,25 @@ def promotion_stream(request):
                 except Agent.DoesNotExist:
                     pass
 
+            # ── 患者信息注入：关联患者后供 AI 参考 ──
+            knowledge_text = _append_patient_context(request, knowledge_text)
+
             system_context = _build_system_context(role_text, knowledge_text)
             session_path = _get_session_context_path(request, model)
             session_data = _load_session_context(session_path, system_context, model)
             session_data['system_context'] = system_context
 
-            with _stream_ollama_response_by_target(
+            if timer.cancelled:
+                raise InterruptedError('用户已停止回答')
+            with timer.track_response(_stream_ollama_response_by_target(
                 chat_target['base_url'],
                 chat_target['model_name'],
                 _build_messages(system_context, _history_messages_for_ollama(session_data), promotion),
-            ) as response:
+            )) as response:
                 response.raise_for_status()
                 for line in response.iter_lines(decode_unicode=True):
+                    if timer.cancelled:
+                        break
                     if not line:
                         continue
                     try:
@@ -1037,6 +1157,8 @@ def promotion_stream(request):
                     except json.JSONDecodeError:
                         continue
 
+                    if data.get('error'):
+                        raise RuntimeError('模型服务返回错误')
                     message = data.get('message', {}) or {}
 
                     # Newer Ollama thinking API: reasoning is streamed via message.thinking
@@ -1059,30 +1181,609 @@ def promotion_stream(request):
                         yield helper_sse('thinking', {'content': thinking_delta})
 
                     if answer_delta:
+                        timer.first_answer(answer_delta)
                         full_text += answer_delta
                         yield helper_sse('delta', {'content': answer_delta})
-                    elif delta and not direct_thinking_delta:
-                        # If no tagged-think split happened, treat plain content as final answer
-                        full_text += delta
-                        yield helper_sse('delta', {'content': delta})
 
-                    if data.get('done', True):
+                    if data.get('done') is True:
+                        completed = True
                         break
+            if timer.cancelled:
+                result, error_text = 'cancelled', '用户已停止回答'
+            elif not completed:
+                result, error_text = 'interrupted', '模型连接提前结束'
+            elif timer.first_answer_ms is None:
+                result, error_text = 'failed', '模型未返回答案'
 
+        except GeneratorExit:
+            result = 'cancelled' if timer.cancelled else 'interrupted'
+            error_text = '用户已停止回答' if timer.cancelled else '客户端连接已断开'
+            record = log_qa_record(
+                request=request, source='web', user=request.user, patient=patient,
+                model_key=model, question=promotion, answer=full_text, thinking=think_text,
+                latency_ms=timer.elapsed_ms(), error=error_text,
+            )
+            timer.finish(result, record)
+            raise
         except Exception as e:
-            err = f'（服务端错误）{type(e).__name__}: {e}'
-            yield helper_sse('delta', {'content': err})
-            full_text = (full_text or '') + '\n' + err
+            result = 'cancelled' if timer.cancelled else failure_status(e)
+            error_text = '用户已停止回答' if timer.cancelled else f'（服务端错误）{type(e).__name__}: {e}'
 
-        if session_data is not None and session_path is not None:
+        if result == 'success' and session_data is not None and session_path is not None:
             _append_session_message(session_data, 'user', promotion)
             _append_session_message(session_data, 'assistant', full_text)
             _save_session_context(session_path, session_data)
 
-        _append_chat_history(request, promotion, full_text)
-        yield helper_sse('done', {'final': full_text, 'thinking': think_text, 'audio_url': None})
+        if result == 'success':
+            _append_chat_history(request, promotion, full_text, model)
+        # 问答入库（数据分析数据源）
+        record = log_qa_record(
+            request=request, source='web', user=request.user, patient=patient,
+            model_key=model, question=promotion, answer=full_text, thinking=think_text,
+            latency_ms=timer.elapsed_ms(), error=error_text,
+        )
+        timer.finish(result, record)
+        yield helper_sse('done', {
+            'final': full_text, 'thinking': think_text, 'audio_url': None, 'result': result, 'error': error_text,
+        })
 
-    response = StreamingHttpResponse(generate(), content_type='text/event-stream')
+    response = StreamingHttpResponse(TimedStream(generate(), timer), content_type='text/event-stream')
     response['Cache-Control'] = 'no-cache'
     response['X-Accel-Buffering'] = 'no'
     return response
+
+
+# ══════════════════════════════════════════════════════════════
+#  二期升级：患者管理 / 数据分析 / AI 驱动配置
+# ══════════════════════════════════════════════════════════════
+
+def _parse_date(value):
+    """解析 date input 'YYYY-MM-DD'，失败返回 None"""
+    if not value:
+        return None
+    try:
+        return datetime.strptime(str(value).strip(), '%Y-%m-%d').date()
+    except ValueError:
+        return None
+
+
+def _parse_datetime_local(value):
+    """解析 datetime-local 'YYYY-MM-DDTHH:mm'，返回 aware datetime，失败返回 None"""
+    if not value:
+        return None
+    try:
+        naive = datetime.fromisoformat(str(value).strip().replace('T', ' '))
+        return timezone.make_aware(naive)
+    except ValueError:
+        return None
+
+
+def _parse_surgery_plans_json(raw):
+    """解析手术计划 JSON 列表，非法行静默丢弃（与 rc_key_points 容错风格一致）"""
+    if not raw:
+        return None
+    try:
+        payload = json.loads(raw)
+    except (json.JSONDecodeError, ValueError):
+        return None
+    if not isinstance(payload, list):
+        return None
+    plans = []
+    for item in payload:
+        if not isinstance(item, dict):
+            continue
+        planned = _parse_datetime_local(item.get('planned_time'))
+        if planned is None:
+            continue
+        plans.append({'planned_time': planned, 'note': str(item.get('note', ''))[:200]})
+    return plans
+
+
+# ──────────────────────────────────────────────────────────────
+#  患者选择（聊天页左抽屉）
+# ──────────────────────────────────────────────────────────────
+
+def patient_select_view(request):
+    """POST /promotion/patient/select/ — 关联/清除当前会话患者"""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST only'}, status=405)
+    try:
+        body = json.loads(request.body.decode('utf-8') or '{}')
+    except (json.JSONDecodeError, ValueError):
+        body = {}
+    patient_id = body.get('patient_id')
+    if patient_id in (None, ''):
+        request.session.pop('current_patient_id', None)
+        return JsonResponse({'ok': True, 'patient': None,
+                             'history': _selected_patient_history(request, body.get('model_key'))})
+    patient = Patient.objects.filter(id=patient_id, is_active=True).first()
+    if patient is None:
+        return JsonResponse({'ok': False, 'error': '患者不存在或已归档'}, status=404)
+    request.session['current_patient_id'] = patient.id
+    return JsonResponse({'ok': True, 'patient': {
+        'id': patient.id, 'bed_no': patient.bed_no, 'name': patient.name,
+    }, 'history': _selected_patient_history(request, body.get('model_key'))})
+
+
+# ──────────────────────────────────────────────────────────────
+#  患者管理页（CRUD，form_type POST + 整页重渲染，沿用 setup 惯例）
+# ──────────────────────────────────────────────────────────────
+
+def patients_view(request):
+    upload_message = None
+    disease_filter = request.GET.get('disease', '')
+    show_archived = request.GET.get('archived') == '1'
+
+    if request.method == 'POST':
+        form_type = request.POST.get('form_type')
+        if form_type in ('patient_create', 'patient_edit'):
+            patient_id = request.POST.get('patient_id')
+            bed_no = (request.POST.get('bed_no') or '').strip()
+            name = (request.POST.get('name') or '').strip()
+            gender = request.POST.get('gender', '')
+            if gender not in ('male', 'female'):
+                gender = ''
+            birth_date = _parse_date(request.POST.get('birth_date'))
+            disease_type = request.POST.get('disease_type', 'other')
+            if disease_type not in dict(DISEASE_TYPE_CHOICES):
+                disease_type = 'other'
+            admission_time = _parse_datetime_local(request.POST.get('admission_time'))
+            cautions = request.POST.get('cautions', '').strip()
+            notes = request.POST.get('notes', '').strip()
+
+            try:
+                stay_min_raw = request.POST.get('expected_stay_min_days', '').strip()
+                stay_max_raw = request.POST.get('expected_stay_max_days', '').strip()
+                stay_min = int(stay_min_raw) if stay_min_raw else None
+                stay_max = int(stay_max_raw) if stay_max_raw else None
+            except ValueError:
+                stay_min = stay_max = None
+
+            patient = None
+            if not bed_no or not name:
+                upload_message = {'type': 'error', 'text': '床号和姓名为必填项'}
+            elif stay_min is not None and stay_max is not None and stay_min > stay_max:
+                upload_message = {'type': 'error', 'text': '预计在院最短天数不能大于最长天数'}
+            elif form_type == 'patient_create':
+                patient = Patient.objects.create(
+                    bed_no=bed_no, name=name, gender=gender, birth_date=birth_date,
+                    disease_type=disease_type, admission_time=admission_time,
+                    expected_stay_min_days=stay_min, expected_stay_max_days=stay_max,
+                    cautions=cautions, notes=notes,
+                )
+                upload_message = {'type': 'success', 'text': f'患者「{bed_no}床 {name}」已创建'}
+            else:
+                patient = Patient.objects.filter(id=patient_id).first()
+                if patient is None:
+                    upload_message = {'type': 'error', 'text': '患者不存在'}
+                else:
+                    patient.bed_no = bed_no
+                    patient.name = name
+                    patient.gender = gender
+                    patient.birth_date = birth_date
+                    patient.disease_type = disease_type
+                    patient.admission_time = admission_time
+                    patient.expected_stay_min_days = stay_min
+                    patient.expected_stay_max_days = stay_max
+                    patient.cautions = cautions
+                    patient.notes = notes
+                    patient.save()
+                    upload_message = {'type': 'success', 'text': f'患者「{bed_no}床 {name}」已更新'}
+
+            plans = _parse_surgery_plans_json(request.POST.get('surgery_plans_json'))
+            if plans is not None and patient is not None:
+                patient.surgery_plans.all().delete()
+                SurgeryPlan.objects.bulk_create(
+                    SurgeryPlan(patient=patient, **plan) for plan in plans
+                )
+        elif form_type == 'patient_delete':
+            patient = Patient.objects.filter(id=request.POST.get('patient_id')).first()
+            if patient is not None:
+                patient.is_active = False
+                patient.save(update_fields=['is_active'])
+                upload_message = {'type': 'success', 'text': f'患者「{patient.bed_no}床 {patient.name}」已归档（历史问答保留）'}
+        elif form_type == 'patient_restore':
+            patient = Patient.objects.filter(id=request.POST.get('patient_id')).first()
+            if patient is not None:
+                patient.is_active = True
+                patient.save(update_fields=['is_active'])
+                upload_message = {'type': 'success', 'text': f'患者「{patient.bed_no}床 {patient.name}」已恢复在院'}
+
+    patients = Patient.objects.all().order_by('-is_active', 'bed_no', 'name')
+    if disease_filter:
+        patients = patients.filter(disease_type=disease_filter)
+    if not show_archived:
+        patients = patients.filter(is_active=True)
+
+    # 编辑模态回填：患者手术计划（datetime-local 格式字符串）
+    plans_map = {
+        str(p.id): [
+            {'t': timezone.localtime(sp.planned_time).strftime('%Y-%m-%dT%H:%M'), 'note': sp.note}
+            for sp in p.surgery_plans.all()
+        ]
+        for p in patients
+    }
+
+    return render(request, 'promotions/patients.html', {
+        'patients': patients,
+        'plans_map': plans_map,
+        'disease_choices': DISEASE_TYPE_CHOICES,
+        'disease_filter': disease_filter,
+        'show_archived': show_archived,
+        'upload_message': upload_message,
+        'active_tab': 'patients',
+    })
+
+
+# ──────────────────────────────────────────────────────────────
+#  数据分析页
+# ──────────────────────────────────────────────────────────────
+
+def _mask_name(name):
+    """姓名脱敏：张三 → 张*"""
+    if not name:
+        return ''
+    return name[0] + '*'
+
+
+def _build_qa_base_qs(start, end, include_failures=False):
+    """带时间窗的基准查询集；成功指标与失败指标共用筛选条件。"""
+    qs = QARecord.objects.all()
+    if not include_failures:
+        qs = qs.exclude(error__gt='')
+    if start:
+        qs = qs.filter(created_at__date__gte=start)
+    if end:
+        qs = qs.filter(created_at__date__lte=end)
+    return qs
+
+
+def _apply_topic_filter(qs, topic):
+    """按主题过滤。SQLite 不支持 JSONField 数组 contains 查询，改为 Python 侧过滤
+    （先经日期等其他条件裁剪，病区单月量级足够；数据量再大时迁移 PostgreSQL）"""
+    if not topic:
+        return qs
+    matching_ids = [
+        row_id for row_id, topics in qs.values_list('id', 'topics')
+        if topics and topic in topics
+    ]
+    return qs.filter(id__in=matching_ids)
+
+
+def _apply_qa_filters(qs, patient_id=None, disease='', topic='', q=''):
+    if patient_id:
+        qs = qs.filter(patient_id=patient_id)
+    if disease:
+        qs = qs.filter(patient__disease_type=disease)
+    qs = _apply_topic_filter(qs, topic)
+    if q:
+        qs = qs.filter(question__icontains=q)
+    return qs
+
+
+def analytics_view(request):
+    """GET /promotion/analytics/ — 数据分析页"""
+    pending_count = QARecord.objects.filter(
+        extraction_status__in=('pending', 'error')
+    ).count()
+    return render(request, 'promotions/analytics.html', {
+        'active_tab': 'analytics',
+        'ai_config': get_active_config(),
+        'pending_count': pending_count,
+        'patients': Patient.objects.filter(is_active=True).order_by('bed_no', 'name'),
+        'disease_choices': DISEASE_TYPE_CHOICES,
+        'topic_choices': TOPIC_WHITELIST,
+        'default_start': (timezone.localdate() - timedelta(days=29)).isoformat(),
+        'default_end': timezone.localdate().isoformat(),
+    })
+
+
+def analytics_data_view(request):
+    """GET /promotion/analytics/data/ — 统计聚合 JSON"""
+    try:
+        start = _parse_date(request.GET.get('start'))
+        end = _parse_date(request.GET.get('end'))
+        if start is None:
+            start = timezone.localdate() - timedelta(days=29)
+        if end is None:
+            end = timezone.localdate()
+        if start > end:
+            start, end = end, start
+        patient_id = request.GET.get('patient_id')
+        if patient_id:
+            patient_id = int(patient_id)
+        disease = request.GET.get('disease', '')
+        topic = request.GET.get('topic', '')
+        q = (request.GET.get('q') or '').strip()
+        page = max(int(request.GET.get('page', 1) or 1), 1)
+        page_size = min(max(int(request.GET.get('page_size', 20) or 20), 1), 100)
+    except ValueError:
+        return JsonResponse({'ok': False, 'error': '参数格式错误'}, status=400)
+
+    filtered = _apply_qa_filters(
+        _build_qa_base_qs(start, end, include_failures=True),
+        patient_id=patient_id, disease=disease, topic=topic, q=q,
+    )
+    qs = filtered.exclude(error__gt='')
+
+    # ── 指标磁贴 ──
+    total = qs.count()
+    today = qs.filter(created_at__date=timezone.localdate()).count()
+    patient_linked = qs.exclude(patient__isnull=True).count()
+    avg_latency_ms = None
+    latencies = list(qs.exclude(latency_ms__isnull=True).order_by('-created_at')[:2000]
+                     .values_list('latency_ms', flat=True))
+    if latencies:
+        avg_latency_ms = int(sum(latencies) / len(latencies))
+    pending_count = qs.filter(extraction_status__in=('pending', 'error')).count()
+    failed_count = filtered.filter(error__gt='').count()
+
+    # ── 每日趋势（补齐连续日期；全部 + 关联患者两个系列）──
+    from django.db.models import Count
+    from django.db.models.functions import TruncDate
+    trend_rows = (
+        qs.annotate(day=TruncDate('created_at'))
+        .values('day').annotate(count=Count('id')).order_by('day')
+    )
+    patient_trend_rows = (
+        qs.exclude(patient__isnull=True)
+        .annotate(day=TruncDate('created_at'))
+        .values('day').annotate(count=Count('id')).order_by('day')
+    )
+    trend_map = {row['day'].isoformat(): row['count'] for row in trend_rows}
+    patient_trend_map = {row['day'].isoformat(): row['count'] for row in patient_trend_rows}
+    trend = []
+    cursor = start
+    while cursor <= end and len(trend) < 366:
+        iso = cursor.isoformat()
+        trend.append({
+            'date': iso,
+            'count': trend_map.get(iso, 0),
+            'patient_count': patient_trend_map.get(iso, 0),
+        })
+        cursor += timedelta(days=1)
+
+    # ── 主题 / 关键词 TOP（SQLite 平铺 Counter，窗口限 5000 条；
+    #    院内单日量级足够，数据量大迁移 PostgreSQL 后可放宽）──
+    from collections import Counter
+    window = qs.order_by('-created_at')[:5000]
+    topic_counter = Counter(
+        t for topics in window.values_list('topics', flat=True) for t in (topics or [])
+    )
+    keyword_counter = Counter(
+        k for keywords in window.values_list('keywords', flat=True) for k in (keywords or [])
+    )
+    topics = [{'name': k, 'count': v} for k, v in topic_counter.most_common(10)]
+    keywords = [{'name': k, 'count': v} for k, v in keyword_counter.most_common(10)]
+
+    # ── 高频问题 TOP15 ──
+    from django.db.models import Max
+    top_questions = list(
+        qs.values('question')
+        .annotate(count=Count('id'), last_at=Max('created_at'))
+        .order_by('-count', '-last_at')[:15]
+    )
+    for item in top_questions:
+        if item['last_at']:
+            item['last_at'] = timezone.localtime(item['last_at']).isoformat(sep=' ', timespec='minutes')
+
+    # ── 明细（分页）──
+    total_records = qs.count()
+    records = []
+    for rec in qs.select_related('patient', 'user', 'agent').order_by('-created_at')[
+        (page - 1) * page_size: page * page_size
+    ]:
+        records.append({
+            'id': rec.id,
+            'created_at': timezone.localtime(rec.created_at).isoformat(sep=' ', timespec='minutes'),
+            'source': rec.source,
+            'patient': (
+                {'bed_no': rec.patient.bed_no, 'name': _mask_name(rec.patient.name),
+                 'disease': rec.patient.get_disease_type_display()}
+                if rec.patient else None
+            ),
+            'model_key': rec.model_key,
+            'question': rec.question[:100],
+            'answer': rec.answer[:200],
+            'keywords': rec.keywords or [],
+            'topics': rec.topics or [],
+            'extraction_status': rec.extraction_status,
+            'latency_ms': rec.latency_ms,
+        })
+
+    return JsonResponse({'ok': True, 'data': {
+        'tiles': {
+            'total': total,
+            'today': today,
+            'patient_linked': patient_linked,
+            'avg_latency_ms': avg_latency_ms,
+            'pending_extraction': pending_count,
+            'failed_count': failed_count,
+        },
+        'trend': trend,
+        'topics': topics,
+        'keywords': keywords,
+        'top_questions': top_questions,
+        'records': records,
+        'pagination': {'page': page, 'page_size': page_size, 'total': total_records},
+        'filters': {'start': start.isoformat(), 'end': end.isoformat(),
+                    'patient_id': patient_id or None, 'disease': disease, 'topic': topic, 'q': q},
+    }})
+
+
+def analytics_extract_view(request):
+    """POST /promotion/analytics/extract/ — 手动批量提取（最多 30 条/次）"""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST only'}, status=405)
+
+    # 卡死的 processing（超过 30 分钟）重置为 pending，避免永远跳过
+    stale_cutoff = timezone.now() - timedelta(minutes=30)
+    QARecord.objects.filter(
+        extraction_status='processing', created_at__lte=stale_cutoff
+    ).update(extraction_status='pending')
+
+    records = list(
+        QARecord.objects.filter(extraction_status__in=('pending', 'error'))
+        .order_by('created_at')[:30]
+    )
+    done = 0
+    failed = 0
+    results = []
+    for rec in records:
+        outcome = extract_record(rec.id)
+        if outcome.get('ok'):
+            done += 1
+        else:
+            failed += 1
+        results.append({
+            'id': rec.id,
+            'question': rec.question[:40],
+            'method': outcome.get('method', ''),
+            'keywords': outcome.get('keywords', []),
+            'topics': outcome.get('topics', []),
+            'error': outcome.get('error', ''),
+        })
+    remaining = QARecord.objects.filter(extraction_status__in=('pending', 'error')).count()
+    return JsonResponse({'ok': True, 'done': done, 'failed': failed,
+                         'remaining': remaining, 'results': results})
+
+
+def _build_insight_summary(start, end, qs, failed_count=0):
+    """把统计摘要裁剪成 AI 洞察的输入文本"""
+    from collections import Counter
+    from django.db.models import Count
+
+    total = qs.count()
+    today = qs.filter(created_at__date=timezone.localdate()).count()
+    patient_linked = qs.exclude(patient__isnull=True).count()
+
+    window = qs.order_by('-created_at')[:3000]
+    topic_counter = Counter(
+        t for topics in window.values_list('topics', flat=True) for t in (topics or [])
+    )
+    keyword_counter = Counter(
+        k for keywords in window.values_list('keywords', flat=True) for k in (keywords or [])
+    )
+    top_questions = list(
+        qs.values('question').annotate(count=Count('id')).order_by('-count')[:10]
+    )
+    disease_counter = Counter(
+        disease for _, disease in qs.exclude(patient__isnull=True).order_by()
+        .values_list('patient_id', 'patient__disease_type').distinct()
+    )
+    samples = []
+    for rec in qs.select_related('patient').order_by('-created_at')[:5]:
+        samples.append(f'Q: {rec.question[:120]}\nA: {rec.answer[:200]}')
+
+    lines = [
+        f'统计区间: {start} 至 {end}',
+        f'总问答数: {total}；今日新增: {today}；关联患者问答: {patient_linked}；服务端失败记录: {failed_count}',
+        '主题分布 TOP10: ' + ('；'.join(f'{k} {v}次' for k, v in topic_counter.most_common(10)) or '无'),
+        '关键词 TOP10: ' + ('；'.join(f'{k} {v}次' for k, v in keyword_counter.most_common(10)) or '无'),
+        '高频问题 TOP10: ' + ('；'.join(
+            f'{i + 1}) {item["question"][:50]}({item["count"]}次)'
+            for i, item in enumerate(top_questions)
+        ) or '无'),
+        '关联患者疾病分布: ' + ('；'.join(
+            f'{dict(DISEASE_TYPE_CHOICES).get(k, k)} {v}人' for k, v in disease_counter.most_common()
+        ) or '无'),
+        '近期典型问答:',
+    ]
+    lines.extend(samples or ['（暂无）'])
+    return '\n'.join(lines)
+
+
+INSIGHT_SYSTEM_PROMPT = (
+    '你是一名医院病区护理数据分析师，面向护士长输出护理质量分析简报。'
+    '基于给定的统计数据，用中文 Markdown 输出以下小节：'
+    '## 总体概况 / ## 患者关切热点 / ## 趋势与变化 / ## 护理提示与宣教建议（结合功能神经外科：'
+    '帕金森DBS、癫痫、肌张力障碍等）/ ## 风险关注。'
+    '客观引用数据，不要编造数字；总字数控制在 600 字内。'
+)
+
+
+def analytics_insight_view(request):
+    """POST /promotion/analytics/insight/ — AI 洞察简报（使用当前过滤器）"""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST only'}, status=405)
+    config = get_active_config()
+    if config is None:
+        return JsonResponse({'ok': False, 'error': '请先在页面顶部完成 AI 驱动配置'}, status=400)
+    try:
+        body = json.loads(request.body.decode('utf-8') or '{}')
+    except (json.JSONDecodeError, ValueError):
+        body = {}
+    start = _parse_date(body.get('start'))
+    end = _parse_date(body.get('end'))
+    if start is None:
+        start = timezone.localdate() - timedelta(days=29)
+    if end is None:
+        end = timezone.localdate()
+    if start > end:
+        start, end = end, start
+
+    try:
+        filtered = _apply_qa_filters(
+            _build_qa_base_qs(start, end, include_failures=True),
+            patient_id=body.get('patient_id'), disease=body.get('disease', ''),
+            topic=body.get('topic', ''), q=(body.get('q') or '').strip(),
+        )
+        qs = filtered.exclude(error__gt='')
+        summary = _build_insight_summary(start, end, qs, filtered.filter(error__gt='').count())
+    except (ValueError, TypeError):
+        return JsonResponse({'ok': False, 'error': '参数格式错误'}, status=400)
+    t0 = time.perf_counter()
+    try:
+        text = chat_complete_text(
+            cfg=config, system=INSIGHT_SYSTEM_PROMPT, user_text=summary, temperature=0.3,
+        )
+    except AIClientError as e:
+        return JsonResponse({'ok': False, 'error': str(e)}, status=502)
+    return JsonResponse({'ok': True, 'text': text, 'model': config.model,
+                         'elapsed_ms': int((time.perf_counter() - t0) * 1000)})
+
+
+# ──────────────────────────────────────────────────────────────
+#  AI 驱动配置（数据分析页顶部）
+# ──────────────────────────────────────────────────────────────
+
+def ai_fetch_models_view(request):
+    """POST /promotion/analytics/ai/fetch-models/ — 按服务类型获取模型列表"""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST only'}, status=405)
+    try:
+        body = json.loads(request.body.decode('utf-8') or '{}')
+    except (json.JSONDecodeError, ValueError):
+        body = {}
+    provider_type = body.get('provider_type', 'ollama')
+    if provider_type not in dict(AIConfig.PROVIDER_CHOICES):
+        return JsonResponse({'ok': False, 'error': '未知的服务类型'}, status=400)
+    ok, models_or_error = fetch_models(provider_type, body.get('base_url', ''), body.get('api_key', ''))
+    if not ok:
+        return JsonResponse({'ok': False, 'error': models_or_error}, status=502)
+    return JsonResponse({'ok': True, 'models': models_or_error})
+
+
+def ai_save_config_view(request):
+    """POST /promotion/analytics/ai/save-config/ — 保存配置（单活跃策略，允许离线保存）"""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST only'}, status=405)
+    try:
+        body = json.loads(request.body.decode('utf-8') or '{}')
+    except (json.JSONDecodeError, ValueError):
+        body = {}
+    provider_type = body.get('provider_type', 'ollama')
+    if provider_type not in dict(AIConfig.PROVIDER_CHOICES):
+        return JsonResponse({'ok': False, 'error': '未知的服务类型'}, status=400)
+    base_url = (body.get('base_url') or '').strip()
+    model = (body.get('model') or '').strip()
+    if not base_url:
+        return JsonResponse({'ok': False, 'error': '请填写 API 地址'}, status=400)
+    if not model:
+        return JsonResponse({'ok': False, 'error': '请选择或填写模型名'}, status=400)
+    AIConfig.objects.filter(is_active=True).update(is_active=False)
+    AIConfig.objects.create(
+        provider_type=provider_type, base_url=base_url,
+        api_key=(body.get('api_key') or '').strip(), model=model, is_active=True,
+    )
+    return JsonResponse({'ok': True})

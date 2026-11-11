@@ -1,0 +1,286 @@
+{% load static %}<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>患者管理</title>
+    <style>
+        :root {
+            --bg: #f6f8fb; --card: #ffffff; --border: #d9e0ea;
+            --text: #1f2937; --muted: #6b7280;
+            --primary: #2563eb; --primary-dark: #1d4ed8;
+            --success: #059669; --danger: #dc2626; --warning: #d97706;
+        }
+        * { box-sizing: border-box; }
+        body { margin:0; font-family: Arial,"Microsoft YaHei",sans-serif; background:var(--bg); color:var(--text); }
+        .page { max-width:1280px; margin:24px auto; padding:0 16px 24px; }
+        .page-header { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:8px; }
+        .page-header h1 { margin:0; font-size:28px; }
+        .section { margin-bottom:20px; border:1px solid var(--border); padding:18px; border-radius:12px; background:var(--card); box-shadow:0 4px 14px rgba(0,0,0,0.04); }
+        .section-header { display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:12px; }
+        .hint { font-size:13px; color:var(--muted); margin:8px 0 0; line-height:1.5; }
+        .message-success { color:var(--success); font-size:14px; margin:10px 0; }
+        .message-error { color:var(--danger); font-size:14px; margin:10px 0; }
+        table { width:100%; border-collapse:collapse; margin-top:10px; background:white; }
+        th,td { border:1px solid #e5e7eb; padding:10px 12px; font-size:14px; text-align:left; vertical-align:top; }
+        th { background:#f3f4f6; }
+        .button-row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+        button,.btn { appearance:none; border:0; border-radius:8px; padding:9px 14px; font-size:14px; cursor:pointer; text-decoration:none; display:inline-flex; align-items:center; justify-content:center; }
+        .btn-primary { background:var(--primary); color:white; }
+        .btn-primary:hover { background:var(--primary-dark); }
+        .btn-secondary { background:#eef2ff; color:var(--primary); border:1px solid #c7d2fe; }
+        .btn-outline { background:transparent; color:var(--muted); border:1px solid var(--border); }
+        .btn-danger { background:#fee2e2; color:var(--danger); border:1px solid #fecaca; }
+        .btn-warning { background:#fef3c7; color:var(--warning); border:1px solid #fcd34d; }
+        input[type="text"],input[type="number"],input[type="date"],input[type="datetime-local"],textarea,select { width:100%; padding:10px 12px; border:1px solid var(--border); border-radius:8px; font-size:14px; margin-top:6px; background:white; }
+        input:disabled { background:#f3f4f6; color:#9ca3af; cursor:not-allowed; }
+        textarea { min-height:80px; resize:vertical; }
+        .status-pill { display:inline-block; padding:4px 10px; border-radius:999px; font-size:12px; font-weight:600; }
+        .status-active { background:#dcfce7; color:#166534; }
+        .status-inactive { background:#f3f4f6; color:#4b5563; }
+        .disease-badge { display:inline-block; padding:2px 8px; border-radius:6px; font-size:12px; font-weight:600; background:#dbeafe; color:#1d4ed8; }
+        .modal-backdrop { position:fixed; inset:0; background:rgba(15,23,42,0.45); display:none; align-items:center; justify-content:center; padding:16px; z-index:1000; }
+        .modal-backdrop.open { display:flex; }
+        .modal { width:min(760px,100%); max-height:90vh; overflow:auto; background:white; border-radius:14px; border:1px solid var(--border); box-shadow:0 20px 50px rgba(0,0,0,0.2); padding:20px; }
+        .modal h3 { margin:0 0 14px; }
+        .empty-state { text-align:center; color:var(--muted); padding:18px 12px; }
+        .form-grid { display:grid; grid-template-columns:1fr 1fr; gap:0 16px; }
+        .form-grid .full { grid-column:1 / -1; }
+        .surgery-row { display:flex; gap:8px; align-items:center; margin-top:8px; }
+        .surgery-row input[type="datetime-local"] { flex:1; margin-top:0; }
+        .surgery-row input[type="text"] { width:220px; margin-top:0; }
+        .surgery-row button { flex-shrink:0; }
+        .scale-placeholder { margin-top:14px; padding:12px 14px; border:1px dashed var(--border); border-radius:8px; background:#fafbfc; color:var(--muted); font-size:13px; }
+        @media (max-width:768px) { .form-grid { grid-template-columns:1fr; } .page-header { flex-direction:column; align-items:flex-start; } }
+    </style>
+</head>
+<body>
+<div class="page">
+    {% include 'promotions/_admin_nav.html' %}
+    <div class="page-header">
+        <div>
+            <h1>患者管理</h1>
+            <p class="hint">创建并管理住院患者档案（功能神经外科病区）。</p>
+        </div>
+        <button type="button" class="btn btn-primary" onclick="openCreateModal()">+ 新增患者</button>
+    </div>
+
+    {% if upload_message %}
+        {% if upload_message.type == 'error' %}
+            <p class="message-error">⚠️ {{ upload_message.text }}</p>
+        {% else %}
+            <p class="message-success">✅ {{ upload_message.text }}</p>
+        {% endif %}
+    {% endif %}
+
+    <div class="section">
+        <form method="GET" class="button-row">
+            <select name="disease" style="width:200px;" onchange="this.form.submit()">
+                <option value="">全部疾病种类</option>
+                {% for value, label in disease_choices %}
+                <option value="{{ value }}" {% if disease_filter == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+            <label style="font-size:14px;color:var(--muted);display:flex;align-items:center;gap:6px;">
+                <input type="checkbox" name="archived" value="1" {% if show_archived %}checked{% endif %} onchange="this.form.submit()"> 含已归档
+            </label>
+        </form>
+
+        <table>
+            <thead><tr>
+                <th>床号</th><th>姓名</th><th>性别</th><th>出生日期</th><th>疾病种类</th>
+                <th>入院时间</th><th>计划手术时间</th><th>预计在院</th><th>状态</th><th>操作</th>
+            </tr></thead>
+            <tbody>
+                {% for p in patients %}
+                <tr>
+                    <td>{{ p.bed_no }}</td>
+                    <td>{{ p.name }}</td>
+                    <td>{% if p.gender == 'male' %}男{% elif p.gender == 'female' %}女{% else %}—{% endif %}</td>
+                    <td>{% if p.birth_date %}{{ p.birth_date|date:'Y-m-d' }}{% if p.age is not None %}（{{ p.age }}岁）{% endif %}{% else %}—{% endif %}</td>
+                    <td><span class="disease-badge">{{ p.get_disease_type_display }}</span></td>
+                    <td>{% if p.admission_time %}{{ p.admission_time|date:'Y-m-d H:i' }}{% else %}—{% endif %}</td>
+                    <td style="max-width:260px;">
+                        {% for sp in p.surgery_plans.all %}
+                            {{ sp.planned_time|date:'m-d H:i' }}{% if sp.note %}（{{ sp.note }}）{% endif %}{% if not forloop.last %}；{% endif %}
+                        {% empty %}—
+                        {% endfor %}
+                    </td>
+                    <td>{{ p.stay_range_text }}</td>
+                    <td>
+                        {% if p.is_active %}
+                            <span class="status-pill status-active">在院</span>
+                        {% else %}
+                            <span class="status-pill status-inactive">已归档</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <div class="button-row">
+                            <button type="button" class="btn btn-secondary patient-edit-btn"
+                                data-id="{{ p.id }}" data-bed="{{ p.bed_no }}" data-name="{{ p.name }}"
+                                data-gender="{{ p.gender }}" data-birth="{% if p.birth_date %}{{ p.birth_date|date:'Y-m-d' }}{% endif %}"
+                                data-disease="{{ p.disease_type }}"
+                                data-admission="{% if p.admission_time %}{{ p.admission_time|date:'Y-m-d\TH:i' }}{% endif %}"
+                                data-stay-min="{{ p.expected_stay_min_days|default:'' }}"
+                                data-stay-max="{{ p.expected_stay_max_days|default:'' }}"
+                                data-cautions="{{ p.cautions|escapejs }}" data-notes="{{ p.notes|escapejs }}">编辑</button>
+                            {% if p.is_active %}
+                            <form method="POST" style="display:inline;" onsubmit="return confirm('确定归档患者「{{ p.name }}」吗？历史问答关联将保留。');">
+                                {% csrf_token %}<input type="hidden" name="form_type" value="patient_delete">
+                                <input type="hidden" name="patient_id" value="{{ p.id }}">
+                                <button class="btn btn-danger" type="submit">归档</button>
+                            </form>
+                            {% else %}
+                            <form method="POST" style="display:inline;">
+                                {% csrf_token %}<input type="hidden" name="form_type" value="patient_restore">
+                                <input type="hidden" name="patient_id" value="{{ p.id }}">
+                                <button class="btn btn-warning" type="submit">恢复在院</button>
+                            </form>
+                            {% endif %}
+                        </div>
+                    </td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="10"><div class="empty-state">暂无患者记录，点击右上角「+ 新增患者」创建。</div></td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- ═══ 新增/编辑患者模态 ═══ -->
+<div class="modal-backdrop" id="patientModalBackdrop">
+    <div class="modal">
+        <div class="section-header"><h3 id="patientModalTitle">新增患者</h3></div>
+        <form method="POST" id="patientForm">
+            {% csrf_token %}
+            <input type="hidden" name="form_type" id="patientFormType" value="patient_create">
+            <input type="hidden" name="patient_id" id="patientFormId" value="">
+            <input type="hidden" name="surgery_plans_json" id="surgeryPlansJson" value="">
+            <div class="form-grid">
+                <p><label for="f-bed">床号 *</label><input type="text" id="f-bed" name="bed_no" required maxlength="20"></p>
+                <p><label for="f-name">姓名 *</label><input type="text" id="f-name" name="name" required maxlength="50"></p>
+                <p><label for="f-gender">性别</label>
+                    <select id="f-gender" name="gender">
+                        <option value="">未填写</option>
+                        <option value="male">男</option>
+                        <option value="female">女</option>
+                    </select></p>
+                <p><label for="f-birth">出生日期</label><input type="date" id="f-birth" name="birth_date"></p>
+                <p><label for="f-disease">疾病种类 *</label>
+                    <select id="f-disease" name="disease_type">
+                        {% for value, label in disease_choices %}
+                        <option value="{{ value }}">{{ label }}</option>
+                        {% endfor %}
+                    </select></p>
+                <p><label for="f-admission">入院时间</label><input type="datetime-local" id="f-admission" name="admission_time"></p>
+                <p><label for="f-stay-min">预计在院最短天数</label><input type="number" id="f-stay-min" name="expected_stay_min_days" min="0"></p>
+                <p><label for="f-stay-max">预计在院最长天数</label><input type="number" id="f-stay-max" name="expected_stay_max_days" min="0"></p>
+                <div class="full">
+                    <label>计划手术时间（可多条）</label>
+                    <div id="surgeryRows"></div>
+                    <button type="button" class="btn btn-outline" id="addSurgeryBtn" style="margin-top:8px;">+ 添加手术时间</button>
+                </div>
+                <div class="full"><label for="f-cautions">注意事项</label><textarea id="f-cautions" name="cautions" placeholder="如：跌倒风险高、术后避免剧烈活动等"></textarea></div>
+                <div class="full"><label for="f-notes">备注</label><textarea id="f-notes" name="notes" placeholder="其他需要记录的信息"></textarea></div>
+                <div class="full">
+                    <div class="scale-placeholder">
+                        📋 量表评估（预留）—— 后续版本将支持 UPDRS / MMSE / NPI 等量表录入与趋势分析，当前暂不可填写。
+                    </div>
+                </div>
+            </div>
+            <div class="button-row" style="margin-top:16px;">
+                <button class="btn btn-primary" type="submit">保存</button>
+                <button class="btn btn-outline" type="button" onclick="closePatientModal()">取消</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+{{ plans_map|json_script:"patientPlansData" }}
+
+<script>
+    var PATIENT_PLANS = JSON.parse(document.getElementById('patientPlansData').textContent || '{}');
+
+    function openPatientModal() {
+        document.getElementById('patientModalBackdrop').classList.add('open');
+    }
+    function closePatientModal() {
+        document.getElementById('patientModalBackdrop').classList.remove('open');
+    }
+    document.getElementById('patientModalBackdrop').addEventListener('click', function (e) {
+        if (e.target === this) closePatientModal();
+    });
+
+    function addSurgeryRow(value, note) {
+        var row = document.createElement('div');
+        row.className = 'surgery-row';
+        var timeInput = document.createElement('input');
+        timeInput.type = 'datetime-local';
+        timeInput.value = value || '';
+        timeInput.placeholder = '选择手术日期时间';
+        var noteInput = document.createElement('input');
+        noteInput.type = 'text';
+        noteInput.value = note || '';
+        noteInput.placeholder = '备注（术式/说明，可选）';
+        var delBtn = document.createElement('button');
+        delBtn.type = 'button';
+        delBtn.className = 'btn btn-danger';
+        delBtn.textContent = '×';
+        delBtn.addEventListener('click', function () { row.remove(); });
+        row.appendChild(timeInput);
+        row.appendChild(noteInput);
+        row.appendChild(delBtn);
+        document.getElementById('surgeryRows').appendChild(row);
+    }
+    document.getElementById('addSurgeryBtn').addEventListener('click', function () { addSurgeryRow('', ''); });
+
+    document.getElementById('patientForm').addEventListener('submit', function () {
+        var rows = document.querySelectorAll('#surgeryRows .surgery-row');
+        var plans = [];
+        rows.forEach(function (row) {
+            var t = row.querySelector('input[type="datetime-local"]').value;
+            var n = row.querySelector('input[type="text"]').value;
+            if (t) plans.push({ planned_time: t, note: n });
+        });
+        document.getElementById('surgeryPlansJson').value = JSON.stringify(plans);
+    });
+
+    function resetPatientForm() {
+        document.getElementById('patientForm').reset();
+        document.getElementById('patientFormType').value = 'patient_create';
+        document.getElementById('patientFormId').value = '';
+        document.getElementById('surgeryRows').innerHTML = '';
+        document.getElementById('patientModalTitle').textContent = '新增患者';
+        document.getElementById('f-disease').value = 'other';
+    }
+
+    function openCreateModal() {
+        resetPatientForm();
+        openPatientModal();
+    }
+
+    document.querySelectorAll('.patient-edit-btn').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            resetPatientForm();
+            document.getElementById('patientModalTitle').textContent = '编辑患者';
+            document.getElementById('patientFormType').value = 'patient_edit';
+            document.getElementById('patientFormId').value = btn.dataset.id;
+            document.getElementById('f-bed').value = btn.dataset.bed;
+            document.getElementById('f-name').value = btn.dataset.name;
+            document.getElementById('f-gender').value = btn.dataset.gender || '';
+            document.getElementById('f-birth').value = btn.dataset.birth || '';
+            document.getElementById('f-disease').value = btn.dataset.disease || 'other';
+            document.getElementById('f-admission').value = btn.dataset.admission || '';
+            document.getElementById('f-stay-min').value = btn.dataset.stayMin || '';
+            document.getElementById('f-stay-max').value = btn.dataset.stayMax || '';
+            document.getElementById('f-cautions').value = btn.dataset.cautions || '';
+            document.getElementById('f-notes').value = btn.dataset.notes || '';
+            var plans = PATIENT_PLANS[btn.dataset.id] || [];
+            plans.forEach(function (sp) { addSurgeryRow(sp.t, sp.note); });
+            openPatientModal();
+        });
+    });
+</script>
+</body>
+</html>

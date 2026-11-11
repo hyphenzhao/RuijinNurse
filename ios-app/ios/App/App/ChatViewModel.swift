@@ -48,8 +48,10 @@ class ChatViewModel: ObservableObject {
     private var failedMessageIDs: [UUID] = []
     /// Question text of the stream currently in flight — attached to the error message on failure.
     private var currentQuestion: String?
-    /// Consecutive auto-retry attempts for the current question (max 2).
-    private var autoRetryCount = 0
+    private var currentTimingID: String?
+    private var requestStartedAt: TimeInterval?
+    private var firstAnswerMilliseconds: Int?
+    private struct TimingAck: Decodable { let ok: Bool }
 
     /// Set by AppDelegate — used for auto-reading responses after generation completes
     weak var ttsManager: TTSManager?
@@ -125,6 +127,7 @@ class ChatViewModel: ObservableObject {
     }
 
     func logout() {
+        stopGeneration()
         jwtAccess = nil
         jwtRefresh = nil
         Keychain.remove("jwt_access")
@@ -200,14 +203,12 @@ class ChatViewModel: ObservableObject {
     }
 
     // MARK: - Chat
-    func sendMessage(_ text: String, isAutoRetry: Bool = false) {
+    func sendMessage(_ text: String) {
+        guard !isStreaming else { return }
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         guard isLoggedIn, let token = jwtAccess else {
             addSystemMessage("⚠️ 请先登录")
             return
-        }
-        if !isAutoRetry {
-            autoRetryCount = 0
         }
 
         let userMsg = ChatMessage(role: .user, content: text, thinking: nil, timestamp: Date())
@@ -220,21 +221,31 @@ class ChatViewModel: ObservableObject {
         showIntroVideo = false  // Hide intro video after user starts chatting
 
         let model = selectedModelKey.isEmpty ? defaultModelKey : selectedModelKey
-        print("[ChatViewModel] ✉️ 发送问题 (model=\(model)): \(text.prefix(50))\(text.count > 50 ? "…" : "")")
+        print("[ChatViewModel] ✉️ 发送问题 (model=\(model))")
         let body: [String: Any] = ["text": text, "model": model]
         guard let bodyData = try? JSONSerialization.data(withJSONObject: body) else { return }
 
         let headers = ["Authorization": "Bearer \(token)"]
         guard let url = URL(string: "\(serverURL)/api/v1/chat/stream/") else { return }
 
+        currentTimingID = nil
+        firstAnswerMilliseconds = nil
+        requestStartedAt = ProcessInfo.processInfo.systemUptime
         sseClient.connect(url: url, headers: headers, body: bodyData)
     }
 
     func stopGeneration() {
+        if isStreaming {
+            sendStopRequest(timingID: currentTimingID)
+        }
+        currentTimingID = nil
+        requestStartedAt = nil
+        firstAnswerMilliseconds = nil
+        currentQuestion = nil
         sseClient.disconnect()
         ttsManager?.stop()
         if !streamingAnswer.isEmpty || !streamingThinking.isEmpty {
-            let finalContent = streamingAnswer.isEmpty ? "（已停止生成）" : streamingAnswer
+            let finalContent = streamingAnswer.isEmpty ? "（已停止生成）" : "（回答未完成，已停止）\n\n" + streamingAnswer
             let msg = ChatMessage(role: .assistant, content: finalContent, thinking: streamingThinking.isEmpty ? nil : streamingThinking, timestamp: Date())
             messages.append(msg)
         }
@@ -254,92 +265,139 @@ class ChatViewModel: ObservableObject {
         isStreaming = false
         streamingAnswer = ""
         streamingThinking = ""
-        autoRetryCount = 0
         addSystemMessage("🔄 已重新发起提问")
         sendMessage(question)
     }
 
     // MARK: - Private
     private func setupSSECallbacks() {
+        sseClient.onTimingID = { [weak self] timingID in
+            guard let self = self, self.isStreaming else { return }
+            self.currentTimingID = timingID
+        }
         sseClient.onThinking = { [weak self] text in
-            self?.streamingThinking += text
+            guard let self = self, self.isStreaming else { return }
+            self.streamingThinking += text
         }
         sseClient.onDelta = { [weak self] text in
-            self?.streamingAnswer += text
+            guard let self = self, self.isStreaming else { return }
+            self.streamingAnswer += text
+            if self.firstAnswerMilliseconds == nil,
+               !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+               let start = self.requestStartedAt {
+                self.firstAnswerMilliseconds = max(0, Int((ProcessInfo.processInfo.systemUptime - start) * 1000))
+            }
         }
         sseClient.onDone = { [weak self] final, cleanDone in
-            guard let self = self else { return }
+            guard let self = self, self.isStreaming else { return }
             let content = final.isEmpty ? self.streamingAnswer : final
             let think = self.streamingThinking.isEmpty ? nil : self.streamingThinking
             let question = self.currentQuestion
+            let timingID = self.currentTimingID
+            let timingStart = self.requestStartedAt
+            let timingFirst = self.firstAnswerMilliseconds
+            let emptyAnswer = content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            let successful = cleanDone && !emptyAnswer
+            if !successful {
+                // A lost final event does not prove the server failed. Never
+                // automatically submit a second clinical question.
+                self.sendStopRequest(timingID: timingID)
+                self.ttsManager?.stop()
+            }
+            self.sseClient.disconnect()
+            self.currentTimingID = nil
+            self.requestStartedAt = nil
+            self.firstAnswerMilliseconds = nil
             self.isStreaming = false
             self.streamingAnswer = ""
             self.streamingThinking = ""
             self.currentQuestion = nil
-            // A completion invalidates any pending manual-retry state
             self.failedMessageIDs = []
 
-            let emptyAnswer = content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            let needsAutoRetry = (emptyAnswer || !cleanDone) && question != nil && self.autoRetryCount < 2
-
-            // Show whatever content we did receive (even partial)
             if !emptyAnswer {
-                let msg = ChatMessage(role: .assistant, content: content, thinking: think, timestamp: Date())
+                let displayed = successful ? content : "（回答未完成）\n\n" + content
+                let msg = ChatMessage(role: .assistant, content: displayed, thinking: think, timestamp: Date())
                 self.messages.append(msg)
+                if !successful { self.failedMessageIDs.append(msg.id) }
             }
-
-            if needsAutoRetry, let question = question {
-                self.autoRetryCount += 1
-                let reason = emptyAnswer ? "本次未收到回答内容" : "连接在完成前中断"
-                print("[ChatViewModel] 🔁 自动重试 \(self.autoRetryCount)/2（\(reason)）")
-                self.addSystemMessage("⚠️ \(reason)，自动重试（第 \(self.autoRetryCount)/2 次）…")
-                self.sendMessage(question, isAutoRetry: true)
+            if !successful {
+                let reason = emptyAnswer ? "模型未返回回答" : "连接在回答完成前中断"
+                var message = ChatMessage(role: .system,
+                    content: "⚠️ \(reason)。请确认后点击重试。",
+                    thinking: nil, timestamp: Date())
+                message.retryQuestion = question
+                self.messages.append(message)
+                self.failedMessageIDs.append(message.id)
                 return
             }
-
-            self.autoRetryCount = 0
-            if emptyAnswer {
-                self.addSystemMessage("⚠️ 模型未返回内容，请点击重试按钮或重新提问。")
-            } else {
-                // Auto-read: speak the entire response once generation is complete
-                if self.autoReadEnabled, let tts = self.ttsManager {
-                    tts.speak(content)
-                }
+            if let timingID = timingID, let start = timingStart {
+                self.reportTiming(timingID: timingID, startedAt: start, firstMilliseconds: timingFirst)
+            }
+            if self.autoReadEnabled, let tts = self.ttsManager {
+                tts.speak(content)
             }
         }
         sseClient.onError = { [weak self] error in
-            guard let self = self else { return }
+            guard let self = self, self.isStreaming else { return }
             print("[ChatViewModel] ❌ 流错误: \(error)")
             let partial = self.streamingAnswer
             let think = self.streamingThinking.isEmpty ? nil : self.streamingThinking
             let question = self.currentQuestion
+            self.sendStopRequest(timingID: self.currentTimingID)
+            self.sseClient.disconnect()
             self.isStreaming = false
             self.streamingAnswer = ""
             self.streamingThinking = ""
             self.currentQuestion = nil
+            self.currentTimingID = nil
+            self.requestStartedAt = nil
+            self.firstAnswerMilliseconds = nil
             self.ttsManager?.stop()
             self.failedMessageIDs = []
 
-            // Auto-recover: re-ask the same question (like EventSource reconnect on the web)
-            if let question = question, self.autoRetryCount < 2 {
-                self.autoRetryCount += 1
-                print("[ChatViewModel] 🔁 自动重试 \(self.autoRetryCount)/2（错误: \(error)）")
-                self.addSystemMessage("⚠️ 连接中断，自动重试（第 \(self.autoRetryCount)/2 次）…")
-                self.sendMessage(question, isAutoRetry: true)
-                return
-            }
-
-            // Give up after 2 attempts — show partial + error + manual retry button
-            self.autoRetryCount = 0
             if !partial.isEmpty {
-                let msg = ChatMessage(role: .assistant, content: partial, thinking: think, timestamp: Date())
+                let msg = ChatMessage(role: .assistant, content: "（回答未完成）\n\n" + partial,
+                    thinking: think, timestamp: Date())
                 self.messages.append(msg)
                 self.failedMessageIDs.append(msg.id)
             }
-            var errMsg = ChatMessage(role: .system, content: "❌ 错误: \(error)", thinking: nil, timestamp: Date())
-            errMsg.retryQuestion = question  // attach the question for the retry button
+            var errMsg = ChatMessage(role: .system,
+                content: "❌ 错误: \(error)\n请确认后点击重试。",
+                thinking: nil, timestamp: Date())
+            errMsg.retryQuestion = question
             self.messages.append(errMsg)
             self.failedMessageIDs.append(errMsg.id)
+        }
+    }
+
+    private func sendStopRequest(timingID: String?) {
+        // Without an ID, a delayed broad stop could cancel a newer question.
+        guard let timingID = timingID, let token = jwtAccess,
+              let url = URL(string: "\(serverURL)/api/v1/chat/stop/") else { return }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 5
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try? JSONSerialization.data(withJSONObject: ["timing_id": timingID])
+        // Closing the local connection is immediate; network acknowledgment
+        // must never block the UI or a subsequent question.
+        urlSession.dataTask(with: request).resume()
+    }
+
+    private func reportTiming(timingID: String, startedAt: TimeInterval, firstMilliseconds: Int?) {
+        // Publish the final answer first, then sample on the next main-loop turn.
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            let total = max(0, Int((ProcessInfo.processInfo.systemUptime - startedAt) * 1000))
+            let first = min(firstMilliseconds ?? total, total)
+            let payload: [String: Any] = ["timing_id": timingID, "first_ms": first, "total_ms": total]
+            guard let body = try? JSONSerialization.data(withJSONObject: payload) else { return }
+            Task {
+                // Reporting is optional: an unavailable metrics endpoint must
+                // not change or retry an otherwise successful clinical answer.
+                let _: TimingAck? = try? await self.apiPost("/api/v1/chat/timing/", body: body, isRetry: true)
+            }
         }
     }
 

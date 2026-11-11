@@ -9,6 +9,7 @@ class SSEClient: NSObject {
     private var accumulatedAnswer = ""   // Fallback for done event
     private var pendingEvent = ""        // Persist across buffer chunks
     private var doneReceived = false     // Track if done event was processed
+    private var connectionID = UUID()
     private var httpStatus = 200         // Response status — non-2xx becomes an error
 
     // MARK: Diagnostics
@@ -31,6 +32,7 @@ class SSEClient: NSObject {
 
     var isStreaming: Bool { task != nil }
 
+    var onTimingID: ((String) -> Void)?
     var onThinking: ((String) -> Void)?
     var onDelta: ((String) -> Void)?
     /// (finalText, cleanDone) — cleanDone=false means the connection ended
@@ -39,6 +41,8 @@ class SSEClient: NSObject {
     var onError: ((String) -> Void)?
 
     func connect(url: URL, headers: [String: String], body: Data) {
+        disconnect()
+        connectionID = UUID()
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -61,7 +65,10 @@ class SSEClient: NSObject {
         let session = URLSession(
             configuration: config,
             delegate: self,
-            delegateQueue: nil
+            // ChatViewModel connects/disconnects on the main actor. Parse on the
+            // same queue so an old callback cannot race a reset of our buffers
+            // and accidentally tag old answer bytes with a new connection ID.
+            delegateQueue: OperationQueue.main
         )
 
         responseData = Data()
@@ -83,6 +90,7 @@ class SSEClient: NSObject {
     }
 
     func disconnect() {
+        connectionID = UUID()
         task?.cancel()
         task = nil
         accumulatedAnswer = ""
@@ -93,8 +101,16 @@ extension SSEClient: URLSessionDataDelegate {
     func urlSession(_ session: URLSession, dataTask: URLSessionDataTask,
                     didReceive response: URLResponse,
                     completionHandler: @escaping (URLSession.ResponseDisposition) -> Void) {
+        guard dataTask === self.task else { completionHandler(.cancel); return }
         if let http = response as? HTTPURLResponse {
             httpStatus = http.statusCode
+            if let timingID = http.value(forHTTPHeaderField: "X-QA-Timing-ID") {
+                let responseConnection = connectionID
+                DispatchQueue.main.async { [weak self] in
+                    guard self?.connectionID == responseConnection else { return }
+                    self?.onTimingID?(timingID)
+                }
+            }
             sseLog("📡 HTTP \(http.statusCode), Content-Type: \(http.allHeaderFields["Content-Type"] ?? "?")")
         }
         // Keep receiving — the (short) DRF error body carries the readable message
@@ -102,6 +118,7 @@ extension SSEClient: URLSessionDataDelegate {
     }
 
     func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
+        guard dataTask === self.task else { return }
         let now = Date()
 
         // Log long silences — these are what idle timeouts (server proxies) kill
@@ -150,6 +167,9 @@ extension SSEClient: URLSessionDataDelegate {
     }
 
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+        defer { session.finishTasksAndInvalidate() }
+        guard task === self.task else { return }
+        let completedConnection = connectionID
         if let error = error {
             let nsError = error as NSError
             if nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorCancelled {
@@ -168,6 +188,7 @@ extension SSEClient: URLSessionDataDelegate {
             }
 
             DispatchQueue.main.async { [weak self] in
+                guard self?.connectionID == completedConnection else { return }
                 self?.onError?(errorMsg)
             }
         } else if httpStatus >= 400 {
@@ -180,6 +201,7 @@ extension SSEClient: URLSessionDataDelegate {
                 errorMsg = detail
             }
             DispatchQueue.main.async { [weak self] in
+                guard self?.connectionID == completedConnection else { return }
                 self?.onError?(errorMsg)
             }
         } else {
@@ -190,12 +212,13 @@ extension SSEClient: URLSessionDataDelegate {
             // accumulated text but flag the stream as abnormally terminated.
             if !doneReceived {
                 DispatchQueue.main.async { [weak self] in
+                    guard self?.connectionID == completedConnection else { return }
                     self?.onDone?(self?.accumulatedAnswer ?? "", false)
                 }
             }
         }
         DispatchQueue.main.async { [weak self] in
-            self?.task = nil
+            if self?.task === task { self?.task = nil }
         }
     }
 
@@ -223,11 +246,7 @@ extension SSEClient: URLSessionDataDelegate {
             }
         }
 
-        // If pendingEvent was set but no data followed, treat as done
-        if pendingEvent == "done" {
-            processSSEMessage(event: "done", data: "{}")
-            pendingEvent = ""
-        }
+        // A done line without its data is incomplete; didComplete reports interruption.
     }
 
     private func processBuffer() {
@@ -253,22 +272,31 @@ extension SSEClient: URLSessionDataDelegate {
     }
 
     private func processSSEMessage(event: String, data: String) {
-        // Handle "done" event specially — always trigger completion,
-        // even if JSON is malformed (e.g. split across network chunks)
+        let eventConnection = connectionID
         if event == "done" {
             doneReceived = true
-            var final = ""
-            var thinkLen = 0
-            var parseOK = false
-            if let jsonData = data.data(using: .utf8),
-               let dict = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any] {
-                final = dict["final"] as? String ?? ""
-                thinkLen = (dict["thinking"] as? String)?.count ?? 0
-                parseOK = true
+            guard let jsonData = data.data(using: .utf8),
+                  let dict = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any] else {
+                DispatchQueue.main.async { [weak self] in
+                    guard self?.connectionID == eventConnection else { return }
+                    self?.onError?("回答完成信息不完整，请重试。")
+                }
+                return
             }
-            sseLog("🏁 done 事件: parseOK=\(parseOK), final=\(final.count) chars, thinking=\(thinkLen) chars, delta 总数=\(deltaCount), thinking 总数=\(thinkingCount)")
+            let final = dict["final"] as? String ?? ""
+            // Missing result is accepted for older servers; explicit failures
+            // must never become a normal answer or a successful timing sample.
+            let result = dict["result"] as? String ?? "success"
+            let timingID = dict["timing_id"] as? String
+            let failure = dict["error"] as? String ?? "回答未完成，请重试。"
             DispatchQueue.main.async { [weak self] in
-                self?.onDone?(final.isEmpty ? (self?.accumulatedAnswer ?? "") : final, true)
+                guard let self = self, self.connectionID == eventConnection else { return }
+                if let timingID = timingID { self.onTimingID?(timingID) }
+                if result == "success" {
+                    self.onDone?(final.isEmpty ? self.accumulatedAnswer : final, true)
+                } else {
+                    self.onError?(failure)
+                }
             }
             return
         }
@@ -276,14 +304,17 @@ extension SSEClient: URLSessionDataDelegate {
         guard let jsonData = data.data(using: .utf8),
               let dict = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any]
         else {
-            sseLog("⚠️ 事件解析失败: event=\(event), data=\(String(data.prefix(120)))")
+            sseLog("⚠️ 事件解析失败: event=\(event)")
             return
         }
 
         DispatchQueue.main.async { [weak self] in
+            guard self?.connectionID == eventConnection else { return }
             switch event {
             case "status":
-                break  // Connection preamble — no content to extract
+                if let timingID = dict["timing_id"] as? String { self?.onTimingID?(timingID) }
+            case "error":
+                break // The subsequent done carries the terminal outcome exactly once.
             case "thinking":
                 if let content = dict["content"] as? String {
                     if let self = self {

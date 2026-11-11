@@ -7,10 +7,8 @@
     <title>瑞金医院功能神外宣讲AI</title>
     <link href="{% static 'promotions/css/bootstrap.min.css' %}" rel="stylesheet" />
     <script src="{% static 'promotions/js/jquery-3.5.1.min.js' %}"></script>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/styles/github.min.css">
-    <script src="https://cdn.jsdelivr.net/npm/markdown-it@13.0.1/dist/markdown-it.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.6/dist/purify.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/common.min.js"></script>
+    <script src="{% static 'promotions/vendor/markdown-it-13.0.1/markdown-it.min.js' %}"></script>
+    <script src="{% static 'promotions/js/purify.min.js' %}"></script>
 
     <style>
         html, body {
@@ -366,6 +364,8 @@
 
             <!-- Hidden model selection value (must be inside form) -->
             <input type="hidden" id="modelSelect" name="model_select" value="">
+            <!-- Hidden patient association (from left drawer; server session is the source of truth) -->
+            <input type="hidden" id="patientIdInput" name="patient_id" value="{{ current_patient.id|default:'' }}">
         </form>
 
         <!-- Controls panel (glass card, below chat) -->
@@ -410,6 +410,9 @@
             <!-- Action buttons -->
             <div class="control-actions">
                 <a href="{% url 'setup' %}" class="btn btn-outline-secondary btn-sm">⚙️ 系统管理</a>
+                <a href="{% url 'analytics' %}" class="btn btn-outline-secondary btn-sm">📊 数据分析</a>
+                <a href="{% url 'patients' %}" class="btn btn-outline-secondary btn-sm">🛏 患者管理</a>
+                <button type="button" id="patientDrawerToggle" class="btn btn-outline-secondary btn-sm">🛏 关联患者</button>
                 <button type="button" id="helpButton" class="btn btn-outline-secondary btn-sm">❓ 帮助</button>
                 <a class="btn btn-outline-secondary btn-sm" target="_blank"
                    href="{% static 'promotions/unity/Build/index.html' %}">
@@ -446,6 +449,100 @@
     </div>
 </div>
 
+<!-- ═══ 左侧患者抽屉（关联患者，问答计入该患者） ═══ -->
+<style>
+    .patient-drawer-mask { position:fixed; inset:0; background:rgba(15,23,42,0.35); display:none; z-index:1990; }
+    .patient-drawer-mask.open { display:block; }
+    .patient-drawer {
+        position:fixed; left:0; top:0; bottom:0; width:min(340px,88vw);
+        background:rgba(255,255,255,0.97); backdrop-filter:blur(8px);
+        box-shadow:4px 0 24px rgba(0,0,0,0.18);
+        transform:translateX(-105%); transition:transform .25s ease;
+        z-index:2000; display:flex; flex-direction:column;
+    }
+    .patient-drawer.open { transform:translateX(0); }
+    .patient-drawer-header {
+        display:flex; justify-content:space-between; align-items:center;
+        padding:14px 16px; border-bottom:1px solid #e5e7eb;
+    }
+    .patient-drawer-header h3 { margin:0; font-size:17px; }
+    .patient-drawer-close { background:none; border:0; font-size:20px; cursor:pointer; color:#6b7280; padding:4px 8px; }
+    .patient-current-badge {
+        margin:10px 16px; padding:9px 12px; border-radius:10px; font-size:13px;
+        background:#eff6ff; border:1px solid #bfdbfe; color:#1d4ed8;
+    }
+    .patient-current-badge.none { background:#f3f4f6; border-color:#e5e7eb; color:#6b7280; }
+    .patient-search { margin:0 16px 8px; padding:9px 12px; border:1px solid #d9e0ea; border-radius:8px; font-size:14px; width:calc(100% - 32px); }
+    .patient-list { list-style:none; margin:0; padding:0 12px; overflow-y:auto; flex:1; }
+    .patient-list-item {
+        display:flex; justify-content:space-between; align-items:center; gap:8px;
+        padding:10px 12px; border-radius:10px; margin-bottom:6px; cursor:pointer;
+        border:1px solid #e5e7eb; background:white;
+    }
+    .patient-list-item:hover { border-color:#2563eb; }
+    .patient-list-item.selected { border-color:#2563eb; background:#eff6ff; }
+    .patient-list-item .p-name { font-size:14px; font-weight:600; }
+    .patient-list-item .p-meta { font-size:12px; color:#6b7280; margin-top:2px; }
+    .patient-list-item .p-select { flex-shrink:0; font-size:12px; color:#2563eb; }
+    .patient-drawer-footer { padding:12px 16px; border-top:1px solid #e5e7eb; }
+    .patient-drawer-footer .btn { width:100%; }
+    .patient-empty { text-align:center; color:#6b7280; font-size:13px; padding:24px 12px; }
+    #patientToast {
+        position:fixed; bottom:24px; left:50%; transform:translateX(-50%);
+        background:rgba(17,24,39,0.9); color:#fff; padding:9px 18px; border-radius:999px;
+        font-size:13px; z-index:3000; display:none; max-width:90vw;
+    }
+    .patient-float-btn {
+        position:fixed; left:0; top:45%; z-index:1500;
+        background:#2563eb; color:#fff; border:0; border-radius:0 10px 10px 0;
+        padding:12px 10px; font-size:13px; cursor:pointer; writing-mode:vertical-rl;
+        box-shadow:2px 2px 10px rgba(0,0,0,0.25);
+    }
+    .patient-float-btn:hover { background:#1d4ed8; }
+</style>
+
+<button type="button" class="patient-float-btn" id="patientFloatBtn">🛏 关联患者</button>
+<div class="patient-drawer-mask" id="patientDrawerMask"></div>
+<aside class="patient-drawer" id="patientDrawer">
+    <div class="patient-drawer-header">
+        <h3>🛏 患者列表</h3>
+        <button type="button" class="patient-drawer-close" id="patientDrawerClose" aria-label="关闭">×</button>
+    </div>
+    <div class="patient-current-badge {% if not current_patient %}none{% endif %}" id="patientCurrentBadge">
+        {% if current_patient %}
+        ✅ 当前关联：{{ current_patient.bed_no }}床 {{ current_patient.name }}（{{ current_patient.get_disease_type_display }}）
+        {% else %}
+        未关联患者 —— 选择后，问答将计入该患者并供 AI 参考
+        {% endif %}
+    </div>
+    <input type="text" class="patient-search" id="patientSearchInput" placeholder="搜索床号 / 姓名…">
+    <ul class="patient-list" id="patientList">
+        {% for p in patients %}
+        <li class="patient-list-item {% if current_patient.id == p.id %}selected{% endif %}" data-patient-id="{{ p.id }}">
+            <div>
+                <div class="p-name">{{ p.bed_no }}床 {{ p.name }}</div>
+                <div class="p-meta">
+                    {% if p.gender == 'male' %}男{% elif p.gender == 'female' %}女{% endif %}
+                    {% if p.age is not None %} · {{ p.age }}岁{% endif %}
+                    · {{ p.get_disease_type_display }}
+                    {% with next_plan=p.surgery_plans.first %}
+                    {% if next_plan %} · 手术 {{ next_plan.planned_time|date:'m-d H:i' }}{% endif %}
+                    {% endwith %}
+                </div>
+            </div>
+            <span class="p-select">{% if current_patient.id == p.id %}✓ 已关联{% else %}选择{% endif %}</span>
+        </li>
+        {% empty %}
+        <li class="patient-empty">暂无在院患者。请先到「🛏 患者管理」添加患者。</li>
+        {% endfor %}
+    </ul>
+    <div class="patient-drawer-footer">
+        <button type="button" class="btn btn-outline-secondary" id="patientClearBtn">清除关联</button>
+        <p class="hint" style="font-size:12px;color:#6b7280;margin:8px 0 0;">关联后，患者信息（床号、诊断、手术计划等）将随提问提供给 AI 参考。</p>
+    </div>
+</aside>
+<div id="patientToast"></div>
+
 <div class="modal fade" id="readmeHelpModal" tabindex="-1" aria-labelledby="readmeHelpModalLabel" aria-hidden="true">
   <div class="modal-dialog modal-xl modal-dialog-scrollable">
     <div class="modal-content">
@@ -460,26 +557,26 @@
   </div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.5.2/dist/umd/popper.min.js"></script>
-<script src="{% static 'promotions/js/bootstrap.min.js' %}"></script>
+<script src="{% static 'promotions/js/bootstrap.bundle.min.js' %}"></script>
 <script>
   // --- Link / Markdown helpers ---
-  const md = window.markdownit({
+  const md = typeof window.markdownit === 'function' ? window.markdownit({
     html: false,
     linkify: true,
     breaks: true,
-  });
+  }) : null;
 
   function escapeHtml(s){ const d=document.createElement('div'); d.textContent=s; return d.innerHTML; }
   function textToSafeHtml(s){ return escapeHtml(s).replace(/\n/g,'<br>'); }
 
   function normalizeMediaUrl(url){
-    if (!url) return url;
+    if (!url) return null;
     const trimmed = url.trim();
+    if (/[\u0000-\u0020\u007f\\]/.test(trimmed)) return null;
     if (/^https?:\/\//i.test(trimmed)) return trimmed;
-    if (trimmed.startsWith('/')) return trimmed;
+    if (trimmed.startsWith('/') && !trimmed.startsWith('//')) return trimmed;
     if (trimmed.startsWith('static/')) return '/' + trimmed;
-    return trimmed;
+    return null;
   }
 
   function getMediaType(url){
@@ -491,10 +588,12 @@
   }
 
   function renderMarkdownSafe(text){
+    // A failed static request must still leave a safe, readable answer.
+    if (!md || !window.DOMPurify?.sanitize) return textToSafeHtml(text || '');
     let rendered = md.render(text || '');
     rendered = rendered.replace(/href="static\//g, 'href="/static/');
     rendered = rendered.replace(/src="static\//g, 'src="/static/');
-    return DOMPurify.sanitize(rendered);
+    return window.DOMPurify.sanitize(rendered);
   }
 
   const helpButton = document.getElementById('helpButton');
@@ -692,7 +791,8 @@
         }
     }
 
-    let currentStreamController = null;
+    let currentStream = null;
+    let patientSwitching = false;
     let speechQueue = [];
     let speechSpeaking = false;
     let speechEnabled = 'speechSynthesis' in window;
@@ -736,11 +836,11 @@
     }
 
     // Stream via fetch (POST) and parse SSE-like events
-    async function streamReply(formEl, controller) {
+    async function streamReply(formData, controller) {
         const resp = await fetch("{% url 'promotion_stream' %}", {
             method: "POST",
             headers: { "X-CSRFToken": CSRF_TOKEN },
-            body: new FormData(formEl),
+            body: formData,
             signal: controller.signal,
         });
         if (!resp.ok || !resp.body) throw new Error('网络错误');
@@ -820,7 +920,7 @@
             }
             if (debugSessionPath && debugRuntimeDir) {
                 debugSessionPath.textContent = selectedTarget
-                    ? `${debugRuntimeDir.textContent}\\{{ debug_session_key }}__${sanitizeSessionTargetKey(selectedTarget)}.json`
+                    ? `${debugRuntimeDir.textContent}\\{{ debug_session_key }}__${sanitizeSessionTargetKey(selectedTarget)}__patient_${document.getElementById('patientIdInput').value || 'none'}.json`
                     : '未生成';
             }
             if (debugThinkingMode && showThinkingToggle) {
@@ -845,6 +945,7 @@
             updateDebugPanel();
         }
 
+        window.addEventListener('patient-context-changed', updateDebugPanel);
         modeAgent.addEventListener('change', syncSelectionState);
         modeSingleModel.addEventListener('change', syncSelectionState);
         agentSelect.addEventListener('change', syncSelectionState);
@@ -861,19 +962,67 @@
 
         syncSelectionState();
 
-        async function stopCurrentGeneration() {
-            if (currentStreamController) {
-                currentStreamController.abort();
-                currentStreamController = null;
-            }
+        async function stopCurrentGeneration(stream = currentStream) {
+            stream?.controller.abort();
             stopSpeechPlayback();
             ttsAudio.removeAttribute('src');
+            // There is no previous request on first submission. Until the status
+            // event arrives, aborting the response closes that request directly.
+            if (!stream?.timingId) return;
+            const stopController = new AbortController();
+            const timeout = setTimeout(() => stopController.abort(), 2000);
             try {
                 await fetch("{% url 'promotion_stop' %}", {
                     method: 'POST',
-                    headers: { 'X-CSRFToken': CSRF_TOKEN }
+                    headers: { 'X-CSRFToken': CSRF_TOKEN, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ timing_id: stream.timingId }),
+                    signal: stopController.signal,
                 });
-            } catch (_) {}
+            } catch (_) {
+                // The browser stream is already aborted, even if stop is unavailable.
+            } finally {
+                clearTimeout(timeout);
+            }
+        }
+
+        window.stopCurrentQuestion = async function () {
+            const stream = currentStream;
+            const stopping = stopCurrentGeneration(stream);
+            if (stream) await stream.finished;
+            await stopping;
+        };
+
+        function finishStream(stream) {
+            if (currentStream !== stream) return;
+            currentStream = null;
+            submitBtn.disabled = patientSwitching;
+            submitBtn.textContent = '提交问题';
+            submitBtn.classList.remove('btn-secondary');
+            submitBtn.classList.add('btn-primary');
+            if (stopBtn) stopBtn.disabled = true;
+            textarea.value = '';
+            messages.scrollTop = messages.scrollHeight;
+        }
+
+        function markFirstAnswer(stream, content) {
+            if (stream.firstMs === null && content.trim()) {
+                stream.firstMs = Math.round(performance.now() - stream.startedAt);
+            }
+        }
+
+        function reportAnswerTiming(stream) {
+            if (!stream.timingId || stream.firstMs === null) return;
+            const totalMs = Math.round(performance.now() - stream.startedAt);
+            fetch("{% url 'qa_timing_report' %}", {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF_TOKEN },
+                body: JSON.stringify({
+                    timing_id: stream.timingId,
+                    first_ms: stream.firstMs,
+                    total_ms: totalMs
+                }),
+                keepalive: true
+            }).catch(() => {});
         }
 
         if (stopBtn) {
@@ -884,6 +1033,7 @@
 
         form.addEventListener('submit', async (e)=>{
             e.preventDefault();
+            if (patientSwitching) return;
             const text = textarea.value.trim();
             syncSelectionState();
             if (!text) { textarea.focus(); return; }
@@ -897,7 +1047,35 @@
                 return;
             }
 
-            await stopCurrentGeneration();
+            const previousStream = currentStream;
+            const stream = {
+                controller: new AbortController(),
+                startedAt: performance.now(),
+                timingId: null,
+                firstMs: null,
+                finished: null,
+                resolveFinished: null,
+            };
+            stream.finished = new Promise(resolve => { stream.resolveFinished = resolve; });
+            currentStream = stream;
+            const formData = new FormData(form);
+            submitBtn.disabled = true;
+            submitBtn.textContent = '思考中...';
+            submitBtn.classList.remove('btn-primary');
+            submitBtn.classList.add('btn-secondary');
+            if (stopBtn) stopBtn.disabled = false;
+
+            if (previousStream) await stopCurrentGeneration(previousStream);
+            else stopSpeechPlayback();
+            if (currentStream !== stream) {
+                stream.resolveFinished();
+                return;
+            }
+            if (stream.controller.signal.aborted) {
+                finishStream(stream);
+                stream.resolveFinished();
+                return;
+            }
 
             // 1) show user bubble immediately
             const userBubble = makeBubble('user', '<strong>问题：</strong> ' + $('<div/>').text(text).html());
@@ -906,8 +1084,38 @@
             // 2) optionally show a separate thinking bubble (small/grey) that is expandable
             const showThinking = (document.getElementById('showThinkingToggle')?.checked !== false);
             let thinkingMsg = null;
-            let answerMsgEarly = null;
-            let answerBodyEarly = null;
+            let answerMsg = null;
+            let answerBody = null;
+            function ensureAnswer() {
+                if (!answerMsg) {
+                    answerMsg = makeBubble('ai', '<div class="answer"><strong>答复：</strong><div class="markdown-body mt-2" style="white-space:pre-wrap"></div></div>');
+                    messages.appendChild(answerMsg);
+                    answerBody = answerMsg.querySelector('.markdown-body');
+                }
+                return answerMsg.querySelector('.answer');
+            }
+            function showIncomplete(result, detail) {
+                stopSpeechPlayback();
+                speechBuffer = '';
+                const target = ensureAnswer();
+                const labels = {
+                    cancelled: '已停止生成与朗读',
+                    interrupted: '回答中断，未收到完整答案，请重试',
+                    timeout: '回答超时，请稍后重试',
+                    failed: '回答失败，未获得完整答案，请重试',
+                };
+                target.dataset.result = result;
+                target.innerHTML = '<div class="text-danger" role="alert"><strong>' +
+                    escapeHtml(detail || labels[result] || labels.failed) + '</strong></div>';
+                if (fullBuffer.trim()) {
+                    const partial = document.createElement('div');
+                    partial.className = 'markdown-body mt-2';
+                    partial.innerHTML = '<small class="text-muted">以下为未完成内容，不可作为完整答复：</small><br>' + renderMarkdownSafe(fullBuffer);
+                    target.appendChild(partial);
+                }
+                const indicator = thinkingMsg?.querySelector('.thinking');
+                if (indicator) indicator.style.display = 'none';
+            }
 
             if (showThinking) {
                 const thinkingHtml = '<div class="thinking">正在思考 <span class="dots"><span class="dot"></span><span class="dot"></span><span class="dot"></span></span></div>' +
@@ -948,31 +1156,21 @@
 
                 messages.appendChild(thinkingMsg);
                 messages.scrollTop = messages.scrollHeight;
-            } else {
-                // If thinking is disabled, create the answer bubble immediately and stream deltas into it
-                answerMsgEarly = makeBubble('ai', '<div class="answer"><strong>答复：</strong><div class="markdown-body mt-2" style="white-space:pre-wrap"></div></div>');
-                messages.appendChild(answerMsgEarly);
-                answerBodyEarly = answerMsgEarly.querySelector('.markdown-body');
-                messages.scrollTop = messages.scrollHeight;
             }
-
-            // 3) disable UI while streaming
-            submitBtn.disabled = true;
-            submitBtn.textContent = '思考中...';
-            submitBtn.classList.remove('btn-primary');
-            submitBtn.classList.add('btn-secondary');
-            if (stopBtn) stopBtn.disabled = false;
 
             // buffer for full answer
             let fullBuffer = '';
             let speechBuffer = '';
-            currentStreamController = new AbortController();
+            let answerDone = false;
 
             try {
-                const streamer = await streamReply(form, currentStreamController);
+                const streamer = await streamReply(formData, stream.controller);
                 for await (const { ev, data } of streamer.iterEvents()) {
+                    if (stream.controller.signal.aborted) throw new DOMException('已停止生成', 'AbortError');
                     if (ev === 'status') {
-                        // status events can be ignored
+                        if (!stream.timingId && typeof data.timing_id === 'string') {
+                            stream.timingId = data.timing_id;
+                        }
                     } else if (ev === 'thinking') {
                         const content = data.content || '';
                         if (showThinking && thinkingMsg) {
@@ -995,63 +1193,42 @@
                             speechBuffer = speechParts[speechParts.length - 1] || '';
                         }
 
-                        if (answerBodyEarly) {
-                            appendText(answerBodyEarly, content);
-                            answerBodyEarly.scrollTop = answerBodyEarly.scrollHeight;
+                        if (content) {
+                            ensureAnswer();
+                            appendText(answerBody, content);
+                            markFirstAnswer(stream, content);
+                            answerBody.scrollTop = answerBody.scrollHeight;
                         }
 
                         messages.scrollTop = messages.scrollHeight;
-                    } else if (ev === 'done') {
-                        // done: optional audio
+                    } else if (ev === 'done' && !answerDone) {
+                        answerDone = true;
+                        if (data.result !== 'success' || !fullBuffer.trim()) {
+                            showIncomplete(data.result === 'success' ? 'failed' : data.result);
+                            continue;
+                        }
                         if (speechBuffer.trim()) queueSpeechText(speechBuffer);
                         speechBuffer = '';
-
-                        // hide the thinking bubble (but keep it in DOM for expand if user wants)
-                        const thinkingCont = thinkingMsg ? thinkingMsg.querySelector('.thinking') : null;
+                        const thinkingCont = thinkingMsg?.querySelector('.thinking');
                         if (thinkingCont) thinkingCont.style.display = 'none';
-
-                        // create the final answer bubble and stream the buffered content into it (simulate streaming)
-                        const answerMsg = makeBubble('ai', '<div class="answer"><strong>答复：</strong><div class="markdown-body mt-2" style="white-space:pre-wrap"></div></div>');
-                        messages.appendChild(answerMsg);
-                        const answerBody = answerMsg.querySelector('.markdown-body');
-
-                        // progressive replay: split buffer into reasonable chunks
-                        const CHUNK_SIZE = 32; // characters per chunk for streaming effect
-                        let idx = 0;
-                        while (idx < fullBuffer.length) {
-                            const chunk = fullBuffer.slice(idx, idx + CHUNK_SIZE);
-                            appendText(answerBody, chunk);
-                            idx += CHUNK_SIZE;
-                            messages.scrollTop = messages.scrollHeight;
-                            // small delay to create streaming feel
-                            await new Promise(r => setTimeout(r, 40));
-                        }
-
-                        // final render: replace with sanitized markdown + embedded media
-                        const final = fullBuffer || '';
-                        renderAnswerContent(answerBody.parentElement, final);
+                        if (stream.controller.signal.aborted) throw new DOMException('已停止生成', 'AbortError');
+                        const answer = ensureAnswer();
+                        answer.dataset.result = 'success';
+                        renderAnswerContent(answer, fullBuffer);
                         messages.scrollTop = messages.scrollHeight;
+                        reportAnswerTiming(stream);
                     }
                 }
+                if (!answerDone) throw new Error('连接中断，未收到完整回答。');
             } catch (err) {
                 if (err.name === 'AbortError') {
-                    const stopMsg = makeBubble('ai', '<div class="answer"><strong>答复：</strong><div class="markdown-body mt-2">（已停止生成与朗读）</div></div>');
-                    messages.appendChild(stopMsg);
+                    showIncomplete('cancelled');
                 } else {
-                // show a simple inline error in a visible answer bubble
-                    const errorMsg = makeBubble('ai', '<div class="answer"><strong>答复：</strong><div class="markdown-body mt-2">（发生错误）' + escapeHtml(err.message) + '</div></div>');
-                    messages.appendChild(errorMsg);
+                    showIncomplete('interrupted', '回答中断：' + (err.message || '连接异常，请重试'));
                 }
             } finally {
-                // 4) re-enable UI
-                currentStreamController = null;
-                submitBtn.disabled = false;
-                submitBtn.textContent = '提交问题';
-                submitBtn.classList.remove('btn-secondary');
-                submitBtn.classList.add('btn-primary');
-                if (stopBtn) stopBtn.disabled = true;
-                textarea.value = '';
-                messages.scrollTop = messages.scrollHeight;
+                finishStream(stream);
+                stream.resolveFinished();
             }
         });
     })();
@@ -1137,5 +1314,106 @@
 })();
 </script>
 
+<script>
+    // ── 左侧患者抽屉：打开/关闭/关联/清除 ──
+    (function () {
+        function readCookie(name) {
+            var m = document.cookie.match('(^|;)\\s*' + name + '\\s*=\\s*([^;]+)');
+            return m ? decodeURIComponent(m.pop()) : '';
+        }
+        var CSRF = readCookie('csrftoken');
+
+        var drawer = document.getElementById('patientDrawer');
+        var mask = document.getElementById('patientDrawerMask');
+        var badge = document.getElementById('patientCurrentBadge');
+        var toastEl = document.getElementById('patientToast');
+        var toastTimer = null;
+
+        function openDrawer() { drawer.classList.add('open'); mask.classList.add('open'); }
+        function closeDrawer() { drawer.classList.remove('open'); mask.classList.remove('open'); }
+        function showToast(text) {
+            toastEl.textContent = text;
+            toastEl.style.display = 'block';
+            if (toastTimer) clearTimeout(toastTimer);
+            toastTimer = setTimeout(function () { toastEl.style.display = 'none'; }, 2400);
+        }
+
+        document.getElementById('patientFloatBtn').addEventListener('click', openDrawer);
+        document.getElementById('patientDrawerToggle').addEventListener('click', openDrawer);
+        document.getElementById('patientDrawerClose').addEventListener('click', closeDrawer);
+        mask.addEventListener('click', closeDrawer);
+
+        function markSelected(patientId) {
+            document.querySelectorAll('#patientList .patient-list-item').forEach(function (li) {
+                var isSel = String(li.dataset.patientId) === String(patientId);
+                li.classList.toggle('selected', isSel);
+                li.querySelector('.p-select').textContent = isSel ? '✓ 已关联' : '选择';
+            });
+        }
+
+        function updateBadge(patient) {
+            if (patient) {
+                badge.classList.remove('none');
+                badge.textContent = '✅ 当前关联：' + patient.bed_no + '床 ' + patient.name;
+            } else {
+                badge.classList.add('none');
+                badge.textContent = '未关联患者 —— 选择后，问答将计入该患者并供 AI 参考';
+            }
+            document.getElementById('patientIdInput').value = patient ? patient.id : '';
+            window.dispatchEvent(new Event('patient-context-changed'));
+        }
+
+        async function selectPatient(patientId) {
+            if (patientSwitching) return;
+            patientSwitching = true;
+            const submitButton = document.getElementById('submit-button');
+            submitButton.disabled = true;
+            try {
+                await window.stopCurrentQuestion();
+                const response = await fetch("{% url 'patient_select' %}", {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF },
+                    body: JSON.stringify({
+                        patient_id: patientId,
+                        model_key: document.getElementById('modelSelect').value,
+                    }),
+                });
+                const resp = await response.json();
+                if (!response.ok || !resp.ok) throw new Error(resp.error || '关联失败');
+                markSelected(resp.patient?.id || null);
+                updateBadge(resp.patient || null);
+                const messages = document.getElementById('chat-messages');
+                messages.replaceChildren();
+                for (const chat of (resp.history || [])) {
+                    messages.appendChild(makeBubble('user', '<strong>问题：</strong> ' + escapeHtml(chat.user || '')));
+                    const answer = makeBubble('ai', '<div class="answer"></div>');
+                    renderAnswerContent(answer.querySelector('.answer'), chat.response || '');
+                    messages.appendChild(answer);
+                }
+                messages.scrollTop = messages.scrollHeight;
+                showToast(resp.patient ? '已关联 ' + resp.patient.bed_no + '床 ' + resp.patient.name + '，已切换至该患者独立对话' : '已清除患者关联，已切换至未关联对话');
+                closeDrawer();
+            } catch (error) {
+                showToast('⚠️ 请求失败：' + error.message);
+            } finally {
+                patientSwitching = false;
+                submitButton.disabled = Boolean(currentStream);
+            }
+        }
+
+        document.querySelectorAll('#patientList .patient-list-item').forEach(function (li) {
+            li.addEventListener('click', function () { selectPatient(li.dataset.patientId); });
+        });
+        document.getElementById('patientClearBtn').addEventListener('click', function () { selectPatient(''); });
+
+        var searchInput = document.getElementById('patientSearchInput');
+        searchInput.addEventListener('input', function () {
+            var kw = searchInput.value.trim().toLowerCase();
+            document.querySelectorAll('#patientList .patient-list-item').forEach(function (li) {
+                li.style.display = (!kw || li.textContent.toLowerCase().indexOf(kw) >= 0) ? '' : 'none';
+            });
+        });
+    })();
+</script>
 </body>
 </html>

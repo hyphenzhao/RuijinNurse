@@ -66,7 +66,8 @@ def generate_sse_stream(
     Shared SSE stream generator used by both the web view and mobile API.
 
     Yields SSE event strings.  On completion, saves the session context
-    to *session_path* and calls *chat_history_callback(model, promotion, full_text)* if given.
+    to *session_path* and calls
+    *chat_history_callback(model_key, promotion, full_text, thinking_text)* if given.
     """
     helper_sse = _helper_sse
 
@@ -140,7 +141,7 @@ def generate_sse_stream(
 
     if chat_history_callback:
         try:
-            chat_history_callback(model_key, promotion, full_text)
+            chat_history_callback(model_key, promotion, full_text, think_text)
         except Exception:
             pass
 
@@ -280,6 +281,10 @@ STATIC_WAV_PATH = '/Volumes/Workspace/RuijinNurse/mysite/promotions/static/promo
 def load_role_and_knowledge(base_path):
     role_file_path = os.path.join(base_path, 'role.txt')
     knowledge_file_path = os.path.join(base_path, 'knowledge.txt')
+    if not os.path.exists(role_file_path):
+        role_file_path = os.path.join(base_path, 'role.example.txt')
+    if not os.path.exists(knowledge_file_path):
+        knowledge_file_path = os.path.join(base_path, 'knowledge.example.txt')
 
     # Initialize variables in case files don't exist
     role_text = ''
@@ -295,7 +300,7 @@ def load_role_and_knowledge(base_path):
 # def run_tts_program():
 #     try:
 #         result = subprocess.run(
-#             command, 
+#             command,
 #             cwd=working_directory,  # Set the working directory
 #             check=True,  # Raises an exception if the command fails
 #             stdout=subprocess.PIPE,  # Capture standard output
@@ -314,7 +319,7 @@ def split_chinese_sentences(text):
     # The regex pattern splits on Chinese punctuation that is used for ending sentences.
     # It uses a capturing group so that the punctuation is preserved.
     parts = re.split(r'([。！？：；])', text)
-    
+
     sentences = []
     sentence = ""
     # Reassemble the text parts and punctuation into full sentences.
@@ -340,19 +345,19 @@ def run_tts_program(generated_audio, full_content):
     payload = {
         "text": split_chinese_sentences(full_content)  # e.g., "你好"
     }
-    
+
     # Convert payload to a JSON string using ensure_ascii=False so that non-ASCII characters remain intact.
     payload_json = json.dumps(full_content, ensure_ascii=False)
-    
+
     # Set the header to indicate UTF-8 encoding.
     headers = {"Content-Type": "application/json; charset=utf-8"}
 
     # Send the POST request using data=payload_json to use your custom JSON encoding.
     response = requests.post(opentts_url, data=full_content.replace("；", "。").replace("：", "。"), headers=headers)
-    
+
     # Debug: print the response content for verification
     # print("Response content:", response.content)
-    
+
     # Check the response status code.
     if response.status_code == 200:
         # Optionally check that the returned content type is audio/wav.

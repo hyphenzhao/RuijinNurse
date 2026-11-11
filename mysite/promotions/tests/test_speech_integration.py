@@ -4,7 +4,7 @@ import tempfile
 from pathlib import Path
 
 import requests
-from django.test import TestCase
+from django.test import TestCase, tag
 
 
 TEST_TEXT = '你好，世界。这是一个语音转化测试。'
@@ -15,6 +15,7 @@ def _normalize_text(value: str) -> str:
     return re.sub(r'[\s\.,!?;:，。！？；：、“”"\'（）()【】\[\]<>《》-]+', '', value)
 
 
+@tag('integration')
 class SpeechServiceIntegrationTests(TestCase):
     def _whisper_base_url(self):
         from django.conf import settings

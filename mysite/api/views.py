@@ -1,14 +1,18 @@
 """REST API views for the RuijinNurse iOS/mobile client.
 
 All endpoints live under /api/v1/ and use JWT authentication (DRF simplejwt).
-SSE streaming reuses the shared generator extracted to promotions.view_helper.
+SSE streaming shares timing and cancellation with the web entry point.
 """
 import json
 import re
+import time
+import uuid
 from pathlib import Path
 from datetime import datetime
 
 from django.conf import settings as django_settings
+from django.db import DatabaseError
+from django.utils import timezone
 from django.contrib.auth import authenticate
 from django.http import StreamingHttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404
@@ -19,13 +23,14 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from promotions.models import Agent, KnowledgeDocument
+from promotions.models import Agent, KnowledgeDocument, Patient, QATiming
+from promotions.qa_timing import QATimer, TimedStream, _session_tag, cancel_timing, cancel_active_for_tag
+from .chat_stream import generate_chat_stream
+from promotions.qa_store import format_patient_context
 from promotions.view_helper import (
-    generate_sse_stream,
     load_role_and_knowledge,
     _resolve_session_identifier,
     _safe_model_key,
-    helper_sse,
     route_and_retrieve,
 )
 from .serializers import (
@@ -131,11 +136,12 @@ def _get_chat_target(model_key: str):
     }
 
 
-def _get_session_context_path_for_user(user_id, model_key: str) -> Path:
-    """Build session file path keyed by user ID (for mobile JWT auth)."""
+def _get_session_context_path_for_user(user_id, model_key: str, patient_id=None) -> Path:
+    """Isolate each patient; legacy unscoped files stay available in history."""
     sid = _resolve_session_identifier(user_id)
     RUNTIME_SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
-    return RUNTIME_SESSIONS_DIR / f'{sid}__{_safe_model_key(model_key)}.json'
+    patient_scope = str(patient_id) if patient_id is not None else 'none'
+    return RUNTIME_SESSIONS_DIR / f'{sid}__{_safe_model_key(model_key)}__patient_{patient_scope}.json'
 
 
 # ---------------------------------------------------------------------------
@@ -217,68 +223,100 @@ class LogoutView(APIView):
 class ChatStreamView(APIView):
     """POST /api/v1/chat/stream/ — SSE streaming chat.
 
-    Reuses the shared generate_sse_stream() from promotions.view_helper.
+    Shares timing semantics with the web endpoint and preserves the SSE protocol.
     Authentication: JWT (via IsAuthenticated).
     """
 
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
+        started_ns, started_at = time.perf_counter_ns(), timezone.now()
         serializer = ChatRequestSerializer(data=request.data)
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
         promotion = serializer.validated_data['text']
         model_key = serializer.validated_data['model']
-
-        base_path = _get_base_path()
-        default_role_text, default_knowledge_text = load_role_and_knowledge(base_path)
-
-        chat_target = _get_chat_target(model_key)
-        session_path = _get_session_context_path_for_user(request.user.id, model_key)
-
-        # ── RAG: augment knowledge for KG agents ──
-        if model_key.startswith('agent:'):
-            try:
-                slug = model_key.split(':', 1)[1]
-                agent = Agent.objects.get(slug=slug, is_active=True)
-                rag_result = route_and_retrieve(agent, promotion)
-                if rag_result and rag_result.get('context'):
-                    augmented = (chat_target.get('knowledge_text') or default_knowledge_text or '')
-                    augmented += '\n\n' + rag_result['context']
-                    chat_target['knowledge_text'] = augmented
-            except Agent.DoesNotExist:
-                pass
-
-        def generate():
-            yield helper_sse('status', {'message': 'thinking'})
-            for sse_event in generate_sse_stream(
-                chat_target=chat_target,
-                default_role_text=default_role_text,
-                default_knowledge_text=default_knowledge_text,
-                promotion=promotion,
-                model_key=model_key,
-                session_path=session_path,
-                chat_history_callback=None,  # mobile handles history locally
-            ):
-                yield sse_event
-
-        response = StreamingHttpResponse(generate(), content_type='text/event-stream')
+        try:
+            chat_target = _get_chat_target(model_key)
+        except ValueError:
+            return Response({'detail': '不支持的模型选项'}, status=400)
+        patient = None
+        patient_id = serializer.validated_data.get('patient_id')
+        if patient_id is not None:
+            patient = get_object_or_404(Patient, id=patient_id, is_active=True)
+        timer = QATimer(request, model_key, started_ns, started_at, source='api')
+        timer.model_name = chat_target['model_name']
+        try:
+            default_role_text, default_knowledge_text = load_role_and_knowledge(_get_base_path())
+            session_path = _get_session_context_path_for_user(request.user.id, model_key, patient_id)
+            if model_key.startswith('agent:'):
+                try:
+                    agent = Agent.objects.get(slug=model_key.split(':', 1)[1], is_active=True)
+                    rag_result = route_and_retrieve(agent, promotion)
+                    if rag_result and rag_result.get('context'):
+                        augmented = chat_target.get('knowledge_text') or default_knowledge_text or ''
+                        chat_target['knowledge_text'] = augmented + '\n\n' + rag_result['context']
+                except Agent.DoesNotExist:
+                    pass
+            if patient is not None:
+                patient_block = format_patient_context(patient)
+                if patient_block:
+                    base_knowledge = chat_target.get('knowledge_text') or default_knowledge_text or ''
+                    chat_target['knowledge_text'] = f'{base_knowledge.rstrip()}\n\n{patient_block}'
+        except Exception:
+            timer.finish('failed')
+            return Response({'detail': '问答准备失败，请稍后重试'}, status=503)
+        stream = generate_chat_stream(
+            request=request, chat_target=chat_target,
+            default_role_text=default_role_text, default_knowledge_text=default_knowledge_text,
+            promotion=promotion, model_key=model_key, session_path=session_path,
+            patient=patient, timer=timer,
+        )
+        response = StreamingHttpResponse(TimedStream(stream, timer), content_type='text/event-stream')
         response['Cache-Control'] = 'no-cache'
         response['X-Accel-Buffering'] = 'no'
+        if timer.timing_id:
+            response['X-QA-Timing-ID'] = str(timer.timing_id)
         return response
 
 
 class ChatStopView(APIView):
-    """POST /api/v1/chat/stop/ — acknowledge a stop request.
-
-    The actual stream abort happens client-side (by closing the SSE connection).
-    This endpoint provides a server-side acknowledgment.
-    """
+    """Cancel the authenticated user's request and close its upstream stream."""
 
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
+        if request.data.get('timing_id'):
+            cancel_timing(request)
+        else:
+            # Older clients only send an empty stop request. Scope it to this
+            # authenticated user's API streams, never another user's/web tab.
+            cancel_active_for_tag(request)
+        return Response({'ok': True})
+
+
+class ChatTimingView(APIView):
+    """Optional client measurements; older apps still get backend timings."""
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        try:
+            timing_id = uuid.UUID(str(request.data.get('timing_id', '')))
+        except (ValueError, TypeError, AttributeError):
+            return Response({'ok': False, 'error': '计时参数无效'}, status=400)
+        first, total = request.data.get('first_ms'), request.data.get('total_ms')
+        if type(first) is not int or type(total) is not int or not 0 <= first <= total <= 86_400_000:
+            return Response({'ok': False, 'error': '计时参数无效'}, status=400)
+        rows = QATiming.objects.filter(
+            pk=timing_id, source='api', session_tag=_session_tag(request), status='success',
+        )
+        try:
+            if not rows.filter(client_total_ms__isnull=True).update(client_first_ms=first, client_total_ms=total):
+                if not rows.exists():
+                    return Response({'ok': False, 'error': '计时记录不可用'}, status=404)
+        except DatabaseError:
+            return Response({'ok': False, 'error': '计时暂时不可用'}, status=503)
         return Response({'ok': True})
 
 
@@ -386,6 +424,13 @@ class SessionListView(APIView):
         return Response(sessions)
 
 
+def _owns_session(user_id, session_id):
+    return bool(
+        re.fullmatch(r'[A-Za-z0-9_.-]+', session_id)
+        and session_id.startswith(f'{_resolve_session_identifier(user_id)}__')
+    )
+
+
 class SessionDetailView(APIView):
     """GET /api/v1/sessions/{id}/ — get full session detail.
     DELETE /api/v1/sessions/{id}/ — delete a session.
@@ -394,14 +439,11 @@ class SessionDetailView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request, session_id):
+        if not _owns_session(request.user.pk, session_id):
+            return Response({'detail': '无权访问此会话'}, status=status.HTTP_403_FORBIDDEN)
         path = RUNTIME_SESSIONS_DIR / f'{session_id}.json'
         if not path.exists():
             return Response({'detail': '会话不存在'}, status=status.HTTP_404_NOT_FOUND)
-
-        # Security: only allow access to own sessions
-        sid_prefix = _resolve_session_identifier(request.user.id)
-        if not session_id.startswith(sid_prefix):
-            return Response({'detail': '无权访问此会话'}, status=status.HTTP_403_FORBIDDEN)
 
         try:
             data = json.loads(path.read_text(encoding='utf-8'))
@@ -418,12 +460,9 @@ class SessionDetailView(APIView):
         })
 
     def delete(self, request, session_id):
-        path = RUNTIME_SESSIONS_DIR / f'{session_id}.json'
-
-        # Security: only allow deletion of own sessions
-        sid_prefix = _resolve_session_identifier(request.user.id)
-        if not session_id.startswith(sid_prefix):
+        if not _owns_session(request.user.pk, session_id):
             return Response({'detail': '无权操作此会话'}, status=status.HTTP_403_FORBIDDEN)
+        path = RUNTIME_SESSIONS_DIR / f'{session_id}.json'
 
         if path.exists():
             try:
