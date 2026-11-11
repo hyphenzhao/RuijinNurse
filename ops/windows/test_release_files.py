@@ -36,7 +36,7 @@ class ReleaseFileTests(unittest.TestCase):
         (self.app / 'local.txt').write_text('old local file\n')
         (self.app / 'obsolete.py').write_text('old unused file\n')
         (self.app / 'runtime.txt').write_text('synthetic runtime bytes\n')
-        with sqlite3.connect(self.app / 'mysite' / 'db.sqlite3') as db:
+        with contextlib.closing(sqlite3.connect(self.app / 'mysite' / 'db.sqlite3')) as db, db:
             db.execute('CREATE TABLE events (id INTEGER PRIMARY KEY, value TEXT)')
             db.execute("INSERT INTO events(value) VALUES ('synthetic initial row')")
         self.git(self.app, 'add', '.')
@@ -108,7 +108,7 @@ class ReleaseFileTests(unittest.TestCase):
         self.assertIn('https://existing.invalid', config['CORS_ALLOWED_ORIGINS'])
         self.assertIn('capacitor://localhost', config['CORS_ALLOWED_ORIGINS'])
         self.assertNotIn('*', config['ALLOWED_HOSTS'])
-        with sqlite3.connect(self.app / 'mysite' / 'db.sqlite3') as db:
+        with contextlib.closing(sqlite3.connect(self.app / 'mysite' / 'db.sqlite3')) as db, db:
             db.execute("INSERT INTO events(value) VALUES ('synthetic row accepted after cutover')")
         release.verify_after()
         release.restore()
@@ -122,7 +122,7 @@ class ReleaseFileTests(unittest.TestCase):
         self.assertTrue((self.app / 'obsolete.py').exists())
         self.assertFalse((self.app / 'new.py').exists())
         self.assertEqual(self.config.read_bytes(), self.old_config)
-        with sqlite3.connect(self.app / 'mysite' / 'db.sqlite3') as db:
+        with contextlib.closing(sqlite3.connect(self.app / 'mysite' / 'db.sqlite3')) as db, db:
             self.assertEqual(db.execute('SELECT COUNT(*) FROM events').fetchone()[0], 2)
 
     def test_partial_source_write_failure_can_restore_staged_and_unstaged_changes(self):
@@ -157,7 +157,7 @@ class ReleaseFileTests(unittest.TestCase):
         self.assertTrue(self.config.exists())
         release.restore()
         self.assertFalse(self.config.exists())
-        with sqlite3.connect(self.app / 'mysite' / 'db.sqlite3') as db:
+        with contextlib.closing(sqlite3.connect(self.app / 'mysite' / 'db.sqlite3')) as db, db:
             self.assertEqual(db.execute('SELECT COUNT(*) FROM events').fetchone()[0], 1)
 
     def test_baseline_drift_blocks_preparation(self):
@@ -203,6 +203,44 @@ class ReleaseFileTests(unittest.TestCase):
         with self.assertRaises(deploy.ReleaseError):
             release.restore()
         self.assertEqual(self.git(self.app, 'rev-parse', 'HEAD'), self.before_head)
+
+    def add_session_placeholder(self, content):
+        relative = deploy.SESSION_PLACEHOLDER
+        path = self.candidate / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(content)
+        with zipfile.ZipFile(self.stage / 'source.zip', 'a') as archive:
+            archive.write(path, relative)
+        self.manifest['files'].append({'path': relative, 'before': None, 'after': deploy.digest(path)})
+        self.manifest['payloads']['source.zip'] = deploy.digest(self.stage / 'source.zip')
+        self.save_manifest()
+
+    def test_empty_session_directory_placeholder_is_allowed(self):
+        self.add_session_placeholder(b'')
+        release = self.release()
+        release.prepare()
+        self.assertEqual((release.source / deploy.SESSION_PLACEHOLDER).read_bytes(), b'')
+
+    def test_whitespace_session_directory_placeholder_is_allowed(self):
+        self.add_session_placeholder(b' \t\r\n')
+        release = self.release()
+        release.prepare()
+        self.assertEqual((release.source / deploy.SESSION_PLACEHOLDER).read_bytes(), b' \t\r\n')
+
+    def test_session_placeholder_cannot_hide_runtime_json(self):
+        self.add_session_placeholder(b'{"messages": []}')
+        with self.assertRaises(deploy.ReleaseError):
+            self.release().prepare()
+        self.assertFalse((self.stage / 'source').exists())
+
+    def test_runtime_session_json_is_still_forbidden(self):
+        self.manifest['files'].append({
+            'path': 'mysite/promotions/runtime_sessions/user_1.json',
+            'before': None, 'after': '0' * 64,
+        })
+        self.save_manifest()
+        with self.assertRaises(deploy.ReleaseError):
+            self.release()
 
     def test_windows_unsafe_paths_are_rejected(self):
         for value in ('../x', '/x', 'C:/x', 'a\\x', '.GIT/config', 'x/NUL.txt', 'x/name.', 'x/a:stream', 'x/a\n.txt', 'x/SECRET~1.TXT'):

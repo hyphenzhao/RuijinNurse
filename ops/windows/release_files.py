@@ -4,6 +4,7 @@ This helper never starts/stops services or restores the database. The companion
 PowerShell script owns cutover and rollback. It emits counts and states only.
 """
 import argparse
+from contextlib import closing
 import hashlib
 import json
 import os
@@ -22,6 +23,7 @@ RELEASE_ID = 'fixes-20261111'
 APP = Path(r'D:\RuijinNurse_20260616_Update')
 EXPECTED_HEAD = '5de01b95e1121087483b9a0bce204a2db64fdeab'
 BUNDLE_REF = 'refs/heads/release-20261111'
+SESSION_PLACEHOLDER = 'mysite/promotions/runtime_sessions/.gitkeep'
 WHEELS = {
     'wheels/waitress-3.0.2-py3-none-any.whl',
     'wheels/whitenoise-6.12.0-py3-none-any.whl',
@@ -46,6 +48,15 @@ def relative_path(value):
     ):
         raise ReleaseError('Unsafe release path')
     return path
+
+
+def verify_placeholder(relative, path):
+    if relative == SESSION_PLACEHOLDER:
+        if Path(path).stat().st_size > 4096:
+            raise ReleaseError('Session directory placeholder is too large')
+        content = Path(path).read_bytes()
+        if content.strip(b' \t\r\n\v\f'):
+            raise ReleaseError('Session directory placeholder must contain only empty or whitespace bytes')
 
 
 def digest(path):
@@ -163,7 +174,8 @@ class Release:
                 raise ReleaseError('Invalid baseline digest')
             if index < len(self.entries) and (not isinstance(entry.get('after'), str) or not HASH_RE.fullmatch(entry['after'])):
                 raise ReleaseError('Invalid source digest')
-            if path.casefold() == 'mysite/db.sqlite3' or 'runtime_sessions' in PurePosixPath(path.casefold()).parts:
+            runtime_path = 'runtime_sessions' in PurePosixPath(path.casefold()).parts
+            if path.casefold() == 'mysite/db.sqlite3' or (runtime_path and path != SESSION_PLACEHOLDER):
                 raise ReleaseError('Runtime data must not be deployed as source')
         for path in self.preserved:
             relative_path(path)
@@ -197,11 +209,14 @@ class Release:
         for entry in self.entries + self.deletions:
             if existing_hash(safe_destination(self.app, entry['path'])) != entry.get('before'):
                 raise ReleaseError(f'Baseline drift detected: {entry["path"]}')
+            if entry.get('before') is not None:
+                verify_placeholder(entry['path'], safe_destination(self.app, entry['path']))
 
     def verify_source(self):
         for entry in self.entries:
             if existing_hash(safe_destination(self.source, entry['path'])) != entry['after']:
                 raise ReleaseError(f'Staged source verification failed: {entry["path"]}')
+            verify_placeholder(entry['path'], safe_destination(self.source, entry['path']))
         requirements = self.source / 'requirements-deploy.txt'
         lines = {line.strip() for line in requirements.read_text().splitlines() if line.strip() and not line.lstrip().startswith('#')}
         if lines != {'waitress==3.0.2', 'whitenoise==6.12.0'}:
@@ -231,6 +246,7 @@ class Release:
             for entry in self.entries:
                 if digest(safe_destination(temporary, entry['path'])) != entry['after']:
                     raise ReleaseError('Source archive file digest mismatch')
+                verify_placeholder(entry['path'], safe_destination(temporary, entry['path']))
             if self.source.exists():
                 # Only a previously verified staging directory is replaceable.
                 self.verify_source()
@@ -282,8 +298,8 @@ class Release:
         if tree_hashes(self.backup / 'git') != git_files:
             raise ReleaseError('Git metadata backup verification failed')
         source_db = self.app / 'mysite' / 'db.sqlite3'
-        with sqlite3.connect(source_db.resolve().as_uri() + '?mode=ro', uri=True) as source:
-            with sqlite3.connect(self.backup / 'db.sqlite3') as target:
+        with closing(sqlite3.connect(source_db.resolve().as_uri() + '?mode=ro', uri=True)) as source:
+            with closing(sqlite3.connect(self.backup / 'db.sqlite3')) as target, target:
                 source.backup(target)
                 if target.execute('PRAGMA integrity_check').fetchone()[0] != 'ok':
                     raise ReleaseError('Database backup integrity check failed')
